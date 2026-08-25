@@ -57,9 +57,14 @@ class CompanyCandidate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    @field_validator("company_name", "short_name")
+    @field_validator("company_name", mode="before")
     @classmethod
-    def normalize_company_fields(cls, value: str | None) -> str | None:
+    def normalize_company_name_before_length_validation(cls, value: str) -> str:
+        return normalize_company_name(value)
+
+    @field_validator("short_name")
+    @classmethod
+    def normalize_short_name(cls, value: str | None) -> str | None:
         return normalize_company_name(value) if value is not None else None
 
     @field_validator("official_website")
@@ -74,7 +79,7 @@ class CompanyIntelligenceSearchRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    @field_validator("company_name")
+    @field_validator("company_name", mode="before")
     @classmethod
     def normalize_requested_company_name(cls, value: str) -> str:
         return normalize_company_name(value)

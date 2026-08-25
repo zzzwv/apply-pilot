@@ -73,3 +73,50 @@ def test_url_safety_accepts_public_dns_result_without_connecting(
     )
 
     assert is_safe_url("https://www.example.com/careers") is True
+
+
+def test_safe_resolution_retains_validated_ips_for_peer_verification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Protects HTTP clients from treating a hostname-only preflight as a DNS-rebinding defense."""
+    from app.company_intelligence.url_safety import resolve_safe_url
+
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0)),
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2606:2800:220:1:248:1893:25c8:1946", 0)),
+        ],
+    )
+
+    resolution = resolve_safe_url("https://www.example.com/careers#jobs")
+
+    assert resolution.url == "https://www.example.com/careers"
+    assert resolution.hostname == "www.example.com"
+    assert resolution.approved_ips == ("93.184.216.34", "2606:2800:220:1:248:1893:25c8:1946")
+    assert resolution.allows_peer("93.184.216.34") is True
+    assert resolution.allows_peer("10.0.0.8") is False
+
+
+def test_safe_resolution_rejects_private_dns_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Protects pinning clients from retaining a mixed or private DNS answer."""
+    from app.company_intelligence.url_safety import UnsafeUrlError, resolve_safe_url
+
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.8", 0))],
+    )
+
+    with pytest.raises(UnsafeUrlError):
+        resolve_safe_url("https://redirect.example/path")
+
+
+@pytest.mark.parametrize("url", ["https://./", "https://\ud800.example/"])
+def test_normalize_url_rejects_empty_or_invalid_idna_host(url: str) -> None:
+    """Protects candidate parsing from accepting malformed normalized hosts."""
+    from app.company_intelligence.url_safety import normalize_url
+
+    with pytest.raises(ValueError, match="invalid host"):
+        normalize_url(url)

@@ -72,3 +72,23 @@ def test_candidate_schema_forbids_unknown_fields() -> None:
                 "unexpected_fact": "do not trust this",
             }
         )
+
+
+@pytest.mark.parametrize(
+    ("model_name", "payload"),
+    [
+        ("request", {"company_name": " \t\u3000 "}),
+        ("candidate", {"company_name": " \t\u3000 "}),
+    ],
+)
+def test_required_company_names_reject_input_that_normalizes_to_empty(
+    model_name: str,
+    payload: dict[str, str],
+) -> None:
+    """Protects required company names from accepting whitespace-only input."""
+    from app.company_intelligence.schemas import CompanyCandidate, CompanyIntelligenceSearchRequest
+
+    model = CompanyIntelligenceSearchRequest if model_name == "request" else CompanyCandidate
+
+    with pytest.raises(ValidationError):
+        model.model_validate(payload)
