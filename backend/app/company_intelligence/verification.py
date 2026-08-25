@@ -41,12 +41,22 @@ def resolve_official_domain(
 
     candidate_host = urlsplit(candidate.url).hostname
     official_host = urlsplit(official_website).hostname
-    domains_match = candidate_host is not None and official_host is not None and (
-        candidate_host == official_host or candidate_host.endswith(f".{official_host}")
+    candidate_domain = _without_leading_www(candidate_host)
+    official_domain = _without_leading_www(official_host)
+    domains_match = candidate_domain is not None and official_domain is not None and (
+        candidate_domain == official_domain
+        or candidate_domain.endswith(f".{official_domain}")
     )
     if domains_match:
         return DomainVerification(True, "link domain matches the official website domain")
     return DomainVerification(False, "link domain does not match the official website domain")
+
+
+def _without_leading_www(hostname: str | None) -> str | None:
+    """Treat only the conventional leading www label as equivalent to an official host."""
+    if hostname is None:
+        return None
+    return hostname[4:] if hostname.startswith("www.") else hostname
 
 
 async def verify_recruitment_link(

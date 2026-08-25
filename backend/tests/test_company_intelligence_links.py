@@ -215,7 +215,7 @@ def test_official_domain_resolution_uses_title_name_and_known_official_domain() 
 
     candidate = RecruitmentLinkCandidate(
         title="Acme Corporation 2027 Campus Recruitment",
-        url="https://careers.acme.example/campus",
+        url="https://jobs.acme.example/campus",
         channel_type="official_campus",
         claimed_official=True,
         source_url="https://www.acme.example/careers",
@@ -224,7 +224,7 @@ def test_official_domain_resolution_uses_title_name_and_known_official_domain() 
     verification = resolve_official_domain(
         company_name="Acme Corporation",
         candidate=candidate,
-        official_website="https://acme.example",
+        official_website="https://www.acme.example",
     )
 
     assert verification.verified is True
