@@ -18,6 +18,7 @@ export type RecruitmentLinkCandidate = {
   valid_status?: LinkStatus;
   http_status?: number | null;
   final_url?: string | null;
+  last_checked_at?: string | null;
 };
 
 export type CandidateSource = {
@@ -50,11 +51,13 @@ export type CompanyIntelligenceSearchResult = {
   allow_manual_input: boolean;
 };
 
-export type EditableCompanyCandidate = Omit<CompanyCandidate, "verification_status">;
 export type EditableRecruitmentLink = Pick<
   RecruitmentLinkCandidate,
   "title" | "url" | "channel_type" | "claimed_official" | "source_url" | "evidence"
 >;
+export type EditableCompanyCandidate = Omit<CompanyCandidate, "verification_status" | "recruitment_links"> & {
+  recruitment_links: EditableRecruitmentLink[];
+};
 
 export type CompanyIntelligenceConfirmRequest = {
   company: EditableCompanyCandidate;

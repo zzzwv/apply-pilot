@@ -32,24 +32,30 @@ const candidate: CompanyCandidate = {
   description: "即时通信服务商",
   recruitment_links: [
     {
-      title: "校招官网",
-      url: "https://join.qq.com",
-      channel_type: "official_campus",
-      claimed_official: true,
+      title: "第三方招聘",
+      url: "https://jobs.example.com/tencent",
+      channel_type: "boss",
+      claimed_official: false,
       valid_status: "unknown",
       http_status: 403,
       verification_status: "candidate",
       confidence: 0.6,
+      source_url: "https://jobs.example.com/tencent",
+      evidence: "第三方职位页",
+      last_checked_at: "2026-08-25T01:00:00Z",
     },
     {
-      title: "实习招聘",
-      url: "https://join.qq.com/intern",
-      channel_type: "official_internship",
+      title: "校招官网",
+      url: "https://join.qq.com",
+      channel_type: "official_campus",
       claimed_official: true,
       valid_status: "valid",
       http_status: 200,
       verification_status: "verified",
       confidence: 0.9,
+      source_url: "https://www.tencent.com/careers",
+      evidence: "官网招聘页",
+      last_checked_at: "2026-08-25T02:00:00Z",
     },
   ],
   sources: [
@@ -96,8 +102,10 @@ describe("CompanyIntelligenceField", () => {
     await waitFor(() => expect(screen.getByText("部分信息暂未获取，可手动补充")).toBeDefined());
     expect((screen.getByLabelText("企业全称") as HTMLInputElement).value).toBe("腾讯科技");
     expect(screen.getByText(/暂无法验证/)).toBeDefined();
-    expect(screen.getAllByText("校招官网")[0]).toBeDefined();
-    expect(screen.getAllByText("实习招聘")[0]).toBeDefined();
+    expect(screen.getAllByRole("checkbox").map((item) => item.getAttribute("aria-label"))).toEqual(["选择校招官网", "选择第三方招聘"]);
+    expect(screen.getByText("https://join.qq.com")).toBeDefined();
+    expect(screen.getByText("最后检查：2026-08-25T02:00:00Z")).toBeDefined();
+    expect(screen.getAllByText("www.tencent.com")).toHaveLength(2);
     expect(screen.getByRole("link", { name: "腾讯关于我们" }).getAttribute("href")).toBe("https://www.tencent.com/about");
   });
 
@@ -119,10 +127,29 @@ describe("CompanyIntelligenceField", () => {
     })));
     const submitted = vi.mocked(confirmCompanyIntelligence).mock.calls[0][0];
     expect(submitted.company).not.toHaveProperty("verification_status");
+    expect(submitted.company.recruitment_links[0]).not.toHaveProperty("confidence");
+    expect(submitted.company.recruitment_links[0]).not.toHaveProperty("verification_status");
+    expect(submitted.company.recruitment_links[0]).not.toHaveProperty("valid_status");
+    expect(submitted.company.recruitment_links[0]).not.toHaveProperty("http_status");
+    expect(submitted.company.recruitment_links[0]).not.toHaveProperty("final_url");
     expect(submitted.selected_recruitment_links[0]).not.toHaveProperty("confidence");
     expect(submitted.selected_recruitment_links[0]).not.toHaveProperty("verification_status");
     expect(onChange).toHaveBeenCalledWith(localCompany.id);
     expect(screen.getByText("已关联既有企业：腾讯科技")).toBeDefined();
+  });
+
+  it("clears a resolved company ID when the company text changes", async () => {
+    vi.mocked(searchLocalCompanies).mockResolvedValue([localCompany]);
+    const onChange = vi.fn();
+    render(<CompanyIntelligenceField value={undefined} onChange={onChange} />);
+
+    fireEvent.change(screen.getByLabelText("企业名称"), { target: { value: "腾讯" } });
+    await waitFor(() => expect(searchLocalCompanies).toHaveBeenCalledWith("腾讯"));
+    fireEvent.click(screen.getByRole("button", { name: "腾讯科技（本地企业）" }));
+    fireEvent.change(screen.getByLabelText("企业名称"), { target: { value: "新的企业" } });
+
+    expect(onChange).toHaveBeenLastCalledWith(undefined);
+    expect(screen.queryByText("已关联既有企业：腾讯科技")).toBeNull();
   });
 
   it("keeps manual company creation available when intelligence search fails or is rate limited", async () => {

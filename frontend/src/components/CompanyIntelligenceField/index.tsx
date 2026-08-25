@@ -15,7 +15,7 @@ import type {
 type Props = {
   value?: string;
   initialCompany?: Company;
-  onChange: (companyId: string) => void;
+  onChange: (companyId: string | undefined) => void;
 };
 
 const verificationLabels: Record<VerificationStatus, string> = {
@@ -43,9 +43,17 @@ function toEditableCandidate(candidate: CompanyCandidate): EditableCompanyCandid
     company_size: candidate.company_size ?? null,
     official_website: candidate.official_website ?? null,
     description: candidate.description ?? null,
-    recruitment_links: candidate.recruitment_links,
+    recruitment_links: candidate.recruitment_links.map(toEditableLink),
     sources: candidate.sources,
   };
+}
+
+function sourceDomain(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
 }
 
 function toEditableLink(link: RecruitmentLinkCandidate): EditableRecruitmentLink {
@@ -99,9 +107,15 @@ export function CompanyIntelligenceField({ value, initialCompany, onChange }: Pr
     return () => window.clearTimeout(timer);
   }, [companyName]);
 
+  const orderedLinks = useMemo(
+    () => [...(draft?.recruitment_links ?? [])].sort(
+      (first, second) => Number(second.claimed_official) - Number(first.claimed_official),
+    ),
+    [draft],
+  );
   const selectedLinks = useMemo(
-    () => (draft?.recruitment_links ?? []).filter((link) => selectedUrls.includes(link.url)),
-    [draft, selectedUrls],
+    () => orderedLinks.filter((link) => selectedUrls.includes(link.url)),
+    [orderedLinks, selectedUrls],
   );
 
   const applySearchResult = (result: CompanyIntelligenceSearchResult) => {
@@ -145,6 +159,19 @@ export function CompanyIntelligenceField({ value, initialCompany, onChange }: Pr
     setDraft(undefined);
     setManualError(undefined);
     onChange(company.id);
+  };
+
+  const changeCompanyName = (nextName: string) => {
+    if (nextName !== companyName && (value || linkedCompany)) {
+      onChange(undefined);
+      setLinkedCompany(undefined);
+      setLinkedExistingCompany(false);
+      setDraft(undefined);
+      setSelectedUrls([]);
+      setPartial(false);
+      setWarnings([]);
+    }
+    setCompanyName(nextName);
   };
 
   const updateDraft = (field: keyof CompanyCandidate, valueToSet: string) => {
@@ -195,7 +222,7 @@ export function CompanyIntelligenceField({ value, initialCompany, onChange }: Pr
     <section aria-label="企业智能信息">
       <label htmlFor="company-intelligence-name">企业名称</label>
       <Space.Compact style={{ display: "flex", marginTop: 4 }}>
-        <Input id="company-intelligence-name" value={companyName} onChange={(event) => setCompanyName(event.target.value)} placeholder="输入企业名称或别名" />
+        <Input id="company-intelligence-name" value={companyName} onChange={(event) => changeCompanyName(event.target.value)} placeholder="输入企业名称或别名" />
         <Button type="primary" loading={searchingWeb} onClick={fetchWebIntelligence}>联网获取</Button>
       </Space.Compact>
       {searchingLocal && <Typography.Text type="secondary">正在查询本地企业...</Typography.Text>}
@@ -224,18 +251,22 @@ export function CompanyIntelligenceField({ value, initialCompany, onChange }: Pr
           <Tag style={{ marginTop: 8 }}>{verificationLabels[draft.verification_status ?? "unverified"]}</Tag>
           <Divider orientation="left">招聘入口</Divider>
           <Space direction="vertical" style={{ display: "flex" }}>
-            {draft.recruitment_links.map((link) => (
+            {orderedLinks.map((link) => (
               <div key={link.url}>
                 <Checkbox aria-label={`选择${link.title}`} checked={selectedUrls.includes(link.url)} onChange={(event) => setSelectedUrls((urls) => event.target.checked ? [...urls, link.url] : urls.filter((url) => url !== link.url))}>
                   {link.title}
                 </Checkbox>
                 <Typography.Text type="secondary"> · {link.channel_type} · {linkValidationLabel(link)}</Typography.Text>
+                <Typography.Text style={{ display: "block" }}>{link.url}</Typography.Text>
+                {link.source_url && <div><Typography.Text type="secondary">来源：</Typography.Text><Typography.Text>{sourceDomain(link.source_url)}</Typography.Text> · <a href={link.source_url} target="_blank" rel="noreferrer">{link.source_url}</a></div>}
+                {link.evidence && <Typography.Text type="secondary" style={{ display: "block" }}>依据：{link.evidence}</Typography.Text>}
+                {link.last_checked_at && <Typography.Text type="secondary" style={{ display: "block" }}>最后检查：{link.last_checked_at}</Typography.Text>}
               </div>
             ))}
           </Space>
           <Divider orientation="left">来源</Divider>
           <Space direction="vertical" style={{ display: "flex" }}>
-            {draft.sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.title}</a>)}
+            {draft.sources.map((source) => <div key={source.url}><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a><Typography.Text type="secondary"> · {source.source_type} · </Typography.Text><Typography.Text>{sourceDomain(source.url)}</Typography.Text><Typography.Text style={{ display: "block" }}>{source.url}</Typography.Text></div>)}
           </Space>
           <Button style={{ marginTop: 16 }} type="primary" loading={confirming} onClick={confirmCandidate}>确认企业信息</Button>
         </div>
