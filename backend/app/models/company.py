@@ -6,7 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.models.base import TimestampMixin, utc_now
-from app.models.enums import LinkStatus, RecruitmentChannel, RecruitmentLinkType
+from app.models.enums import LinkStatus, RecruitmentChannel, RecruitmentLinkType, VerificationStatus
 
 
 class Company(TimestampMixin, Base):
@@ -57,5 +57,14 @@ class RecruitmentLink(TimestampMixin, Base):
     valid_status: Mapped[LinkStatus] = mapped_column(default=LinkStatus.UNKNOWN, nullable=False)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     source: Mapped[str | None] = mapped_column(String(128))
+    verification_status: Mapped[VerificationStatus] = mapped_column(
+        default=VerificationStatus.UNVERIFIED, nullable=False
+    )
+    http_status: Mapped[int | None] = mapped_column(Integer)
+    final_url: Mapped[str | None] = mapped_column(String(2048))
+    source_url: Mapped[str | None] = mapped_column(String(2048))
+    source_title: Mapped[str | None] = mapped_column(String(512))
+    source_type: Mapped[str | None] = mapped_column(String(64))
+    retrieved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     company: Mapped[Company] = relationship(back_populates="recruitment_links")

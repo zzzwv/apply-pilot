@@ -50,3 +50,10 @@ class LinkStatus(str, Enum):
     POSSIBLY_INVALID = "possibly_invalid"
     INVALID = "invalid"
     UNKNOWN = "unknown"
+
+
+class VerificationStatus(str, Enum):
+    UNVERIFIED = "unverified"
+    CANDIDATE = "candidate"
+    VERIFIED = "verified"
+    REJECTED = "rejected"
