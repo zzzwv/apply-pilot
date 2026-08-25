@@ -2,7 +2,7 @@ import { Tag } from "antd";
 
 import { statusLabels, type ApplicationStatus } from "../../types/application";
 
-const statusColors: Partial<Record<ApplicationStatus, string>> = {
+export const statusColors: Partial<Record<ApplicationStatus, string>> = {
   RESUME_PASSED: "blue",
   FIRST_INTERVIEW: "blue",
   SECOND_INTERVIEW: "blue",

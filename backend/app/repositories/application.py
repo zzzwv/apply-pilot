@@ -25,7 +25,7 @@ class ApplicationRepository(Repository[JobApplication]):
     async def list_for_user(
         self, user_id: UUID, filters: ApplicationFilterParams
     ) -> tuple[list[JobApplication], int]:
-        statement = self._apply_filters(self._base_query(user_id), filters)
+        statement = self.apply_filters(self.base_query(user_id), filters)
         total = await self.session.scalar(
             select(func.count()).select_from(statement.order_by(None).subquery())
         )
@@ -35,7 +35,7 @@ class ApplicationRepository(Repository[JobApplication]):
         return list(result.scalars().all()), total or 0
 
     @staticmethod
-    def _base_query(user_id: UUID):
+    def base_query(user_id: UUID):
         return (
             select(JobApplication)
             .join(Company, JobApplication.company_id == Company.id)
@@ -44,7 +44,7 @@ class ApplicationRepository(Repository[JobApplication]):
         )
 
     @staticmethod
-    def _apply_filters(statement, filters: ApplicationFilterParams):
+    def apply_filters(statement, filters: ApplicationFilterParams):
         if filters.keyword:
             pattern = f"%{filters.keyword}%"
             statement = statement.where(

@@ -13,6 +13,18 @@ vi.mock("./api/applications", () => ({
   updateApplication: vi.fn(),
 }));
 
+vi.mock("./api/dashboard", () => ({
+  getDashboardSummary: vi.fn().mockResolvedValue({ total: 0, in_progress: 0, offer_count: 0, interview_rate: 0, offer_rate: 0, rejection_rate: 0 }),
+  getStatusDistribution: vi.fn().mockResolvedValue([]),
+  getIndustryDistribution: vi.fn().mockResolvedValue([]),
+  getCompanyNatureDistribution: vi.fn().mockResolvedValue([]),
+  getApplicationTrend: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("./pages/Dashboard", () => ({
+  DashboardPage: () => <><h2>求职投递数据看板</h2><span>总投递</span><button>刷新数据</button></>,
+}));
+
 afterEach(cleanup);
 
 describe("App", () => {
@@ -32,6 +44,21 @@ describe("App", () => {
     );
 
     expect(screen.getByRole("button", { name: "新增投递" })).toBeDefined();
+  });
+
+  it("renders the Phase 4 dashboard as the default route", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/"]}>
+          <App />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "求职投递数据看板" })).toBeDefined());
+    expect(screen.getByText("总投递")).toBeDefined();
+    expect(screen.getByRole("button", { name: "刷新数据" })).toBeDefined();
   });
 
   it("debounces a keyword search and resets pagination to the first page", async () => {
