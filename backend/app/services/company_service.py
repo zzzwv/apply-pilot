@@ -32,6 +32,11 @@ class CompanyService:
         await self.session.refresh(company)
         return company
 
+    async def search_local(self, keyword: str) -> list[CompanyRead]:
+        """Find Company and CompanyAlias matches without involving company intelligence."""
+        companies = await self.companies.search_by_name_or_alias(keyword)
+        return [CompanyRead.model_validate(company) for company in companies]
+
     async def confirm(
         self, payload: CompanyIntelligenceConfirmRequest
     ) -> CompanyIntelligenceConfirmResponse:

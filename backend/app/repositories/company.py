@@ -53,3 +53,25 @@ class CompanyRepository(Repository[Company]):
             ):
                 return company
         return None
+
+    async def search_by_name_or_alias(self, keyword: str, *, limit: int = 8) -> list[Company]:
+        """Return local Company/CompanyAlias matches only; this never triggers remote lookup."""
+        normalized_keyword = normalize_company_name(keyword)
+        if not normalized_keyword:
+            return []
+        pattern = f"%{normalized_keyword}%"
+        statement = (
+            select(Company)
+            .outerjoin(CompanyAlias)
+            .where(
+                or_(
+                    func.lower(func.trim(Company.full_name)).like(pattern),
+                    func.lower(func.trim(CompanyAlias.alias)).like(pattern),
+                    CompanyAlias.normalized_alias.like(pattern),
+                )
+            )
+            .order_by(Company.full_name)
+            .limit(limit)
+        )
+        result = await self.session.execute(statement)
+        return list(result.scalars().unique().all())

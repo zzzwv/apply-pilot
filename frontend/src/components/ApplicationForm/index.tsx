@@ -1,6 +1,8 @@
 import { Button, DatePicker, Drawer, Form, Input, Select, Space } from "antd";
 import dayjs from "dayjs";
 
+import { CompanyIntelligenceField } from "../CompanyIntelligenceField";
+
 import {
   applicationTypeLabels,
   statusLabels,
@@ -55,8 +57,13 @@ export function ApplicationForm({ application, open, saving, onClose, onSubmit }
       extra={<Button form="application-form" type="primary" htmlType="submit" loading={saving}>保存</Button>}
     >
       <Form<FormValues> id="application-form" layout="vertical" form={form} initialValues={initialValues} onFinish={submit}>
-        <Form.Item name="company_id" label="企业 ID" rules={[{ required: true, message: "请输入企业 ID" }]}>
-          <Input placeholder="通过 POST /companies 创建后填入返回的 ID" />
+        <Form.Item name="company_id" hidden rules={[{ required: true, message: "请先关联或创建企业" }]}><Input /></Form.Item>
+        <Form.Item label="企业" required>
+          <CompanyIntelligenceField
+            value={form.getFieldValue("company_id")}
+            initialCompany={application?.company}
+            onChange={(companyId) => form.setFieldValue("company_id", companyId)}
+          />
         </Form.Item>
         <Form.Item name="job_title" label="投递岗位" rules={[{ required: true, message: "请输入岗位名称" }]}><Input /></Form.Item>
         <Space size="large" style={{ display: "flex" }}>
