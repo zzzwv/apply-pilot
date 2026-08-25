@@ -59,7 +59,9 @@ class CompanyCandidate(BaseModel):
 
     @field_validator("company_name", mode="before")
     @classmethod
-    def normalize_company_name_before_length_validation(cls, value: str) -> str:
+    def normalize_company_name_before_length_validation(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise ValueError("company_name must be a string")
         return normalize_company_name(value)
 
     @field_validator("short_name")
@@ -81,7 +83,9 @@ class CompanyIntelligenceSearchRequest(BaseModel):
 
     @field_validator("company_name", mode="before")
     @classmethod
-    def normalize_requested_company_name(cls, value: str) -> str:
+    def normalize_requested_company_name(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise ValueError("company_name must be a string")
         return normalize_company_name(value)
 
 

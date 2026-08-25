@@ -92,3 +92,18 @@ def test_required_company_names_reject_input_that_normalizes_to_empty(
 
     with pytest.raises(ValidationError):
         model.model_validate(payload)
+
+
+@pytest.mark.parametrize("company_name", [None, 42, [], {}])
+@pytest.mark.parametrize("model_name", ["request", "candidate"])
+def test_required_company_names_report_validation_errors_for_non_string_input(
+    model_name: str,
+    company_name: object,
+) -> None:
+    """Protects API validation from leaking raw normalizer type errors."""
+    from app.company_intelligence.schemas import CompanyCandidate, CompanyIntelligenceSearchRequest
+
+    model = CompanyIntelligenceSearchRequest if model_name == "request" else CompanyCandidate
+
+    with pytest.raises(ValidationError):
+        model.model_validate({"company_name": company_name})
