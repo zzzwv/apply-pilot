@@ -19,13 +19,12 @@ verification_status = sa.Enum(
 )
 
 
-def add_column_if_missing(existing_columns: set[str], column: sa.Column[object]) -> bool:
+def add_column_if_missing(existing_columns: set[str], column: sa.Column[object]) -> None:
     if column.name in existing_columns:
-        return False
+        return
 
     op.add_column("recruitment_links", column)
     existing_columns.add(column.name)
-    return True
 
 
 def upgrade() -> None:
@@ -34,7 +33,7 @@ def upgrade() -> None:
         column["name"] for column in sa.inspect(bind).get_columns("recruitment_links")
     }
     verification_status.create(bind, checkfirst=True)
-    added_verification_status = add_column_if_missing(
+    add_column_if_missing(
         existing_columns,
         sa.Column(
             "verification_status",
@@ -43,8 +42,6 @@ def upgrade() -> None:
             server_default=sa.text("'unverified'"),
         ),
     )
-    if added_verification_status:
-        op.alter_column("recruitment_links", "verification_status", server_default=None)
     add_column_if_missing(
         existing_columns, sa.Column("http_status", sa.Integer(), nullable=True)
     )

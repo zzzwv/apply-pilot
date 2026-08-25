@@ -2,6 +2,7 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Enum as SqlEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -58,6 +59,11 @@ class RecruitmentLink(TimestampMixin, Base):
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     source: Mapped[str | None] = mapped_column(String(128))
     verification_status: Mapped[VerificationStatus] = mapped_column(
+        SqlEnum(
+            VerificationStatus,
+            values_callable=lambda statuses: [status.value for status in statuses],
+            name="verificationstatus",
+        ),
         default=VerificationStatus.UNVERIFIED, nullable=False
     )
     http_status: Mapped[int | None] = mapped_column(Integer)

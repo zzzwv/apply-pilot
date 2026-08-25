@@ -26,6 +26,12 @@ def test_recruitment_link_persists_validation_and_source_provenance() -> None:
     columns = RecruitmentLink.__table__.c
 
     assert columns["verification_status"].default.arg is VerificationStatus.UNVERIFIED
+    assert columns["verification_status"].type.enums == [
+        "unverified",
+        "candidate",
+        "verified",
+        "rejected",
+    ]
     assert isinstance(columns["http_status"].type, Integer)
     assert isinstance(columns["final_url"].type, String)
     assert isinstance(columns["source_url"].type, String)
@@ -51,8 +57,8 @@ def test_company_intelligence_settings_have_safe_non_secret_defaults() -> None:
     assert settings.company_intelligence_rate_limit_window_seconds == 60
 
 
-def test_company_intelligence_upgrade_accepts_fresh_schema_columns() -> None:
-    """Protects fresh installs from duplicate-column migration failures."""
+def test_company_intelligence_migration_upgrades_and_downgrades_legacy_schema() -> None:
+    """Protects a Phase 4 recruitment_links table from one-way migration failures."""
     migration_path = (
         Path(__file__).resolve().parents[1]
         / "alembic"
@@ -71,13 +77,6 @@ def test_company_intelligence_upgrade_accepts_fresh_schema_columns() -> None:
         "recruitment_links",
         metadata,
         Column("id", Integer, primary_key=True),
-        Column("verification_status", String(32), nullable=False),
-        Column("http_status", Integer),
-        Column("final_url", String(2048)),
-        Column("source_url", String(2048)),
-        Column("source_title", String(512)),
-        Column("source_type", String(64)),
-        Column("retrieved_at", DateTime(timezone=True)),
     )
     metadata.create_all(engine)
 
@@ -99,3 +98,11 @@ def test_company_intelligence_upgrade_accepts_fresh_schema_columns() -> None:
             "source_type",
             "retrieved_at",
         }
+
+        with Operations.context(context):
+            migration.downgrade()
+
+        column_names = {
+            column["name"] for column in inspect(connection).get_columns("recruitment_links")
+        }
+        assert column_names == {"id"}
