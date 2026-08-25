@@ -25,7 +25,7 @@ class CompanyRepository(Repository[Company]):
         statement = (
             select(Company)
             .outerjoin(CompanyAlias)
-            .options(selectinload(Company.recruitment_links))
+            .options(selectinload(Company.aliases), selectinload(Company.recruitment_links))
             .where(
                 or_(
                     func.lower(func.trim(Company.full_name)) == name,
@@ -34,4 +34,22 @@ class CompanyRepository(Repository[Company]):
             )
         )
         result = await self.session.execute(statement)
-        return result.scalars().first()
+        matched = result.scalars().first()
+        if matched is not None:
+            return matched
+
+        fallback = await self.session.execute(
+            select(Company).options(
+                selectinload(Company.aliases), selectinload(Company.recruitment_links)
+            )
+        )
+        for company in fallback.scalars().all():
+            if normalize_company_name(company.full_name) == name:
+                return company
+            if any(
+                normalize_company_name(alias.alias) == name
+                or alias.normalized_alias == name
+                for alias in company.aliases
+            ):
+                return company
+        return None

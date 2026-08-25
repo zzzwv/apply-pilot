@@ -1,7 +1,7 @@
 """Local-first, non-persisting company intelligence orchestration."""
 
 import asyncio
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from time import monotonic
 from typing import Any
 
@@ -54,40 +54,68 @@ class CompanyIntelligenceService:
         self.overall_timeout_seconds = overall_timeout_seconds
 
     async def search_company(
-        self, request: CompanyIntelligenceSearchRequest
+        self, request: CompanyIntelligenceSearchRequest, *, actor_id: object
     ) -> CompanyIntelligenceSearchResult:
         started_at = monotonic()
         name = request.company_name
         try:
-            local = await asyncio.wait_for(
-                self.companies.find_by_name_or_alias(name),
-                timeout=self._remaining(started_at),
+            local = await self._within_budget(
+                lambda: self.companies.find_by_name_or_alias(name), started_at
             )
         except asyncio.TimeoutError:
             return self._partial("local company lookup timed out")
         if local is not None:
-            return CompanyIntelligenceSearchResult(company=self._local_candidate(local))
+            candidate = self._local_candidate(local)
+            return CompanyIntelligenceSearchResult(
+                company=candidate,
+                recruitment_links=candidate.recruitment_links,
+            )
 
         if not request.force_refresh:
-            cached = await self.cache.get(name)
+            try:
+                cached = await self._within_budget(lambda: self.cache.get(name), started_at)
+            except asyncio.TimeoutError:
+                return self._partial("company intelligence search timed out")
             if cached is not None:
                 return cached
 
-        if not await self.cache.allow_request(name):
+        try:
+            allowed = await self._within_budget(
+                lambda: self.cache.allow_request(actor_id), started_at
+            )
+        except asyncio.TimeoutError:
+            return self._partial("company intelligence search timed out")
+        if not allowed:
             return self._partial(
                 "company intelligence rate limit reached; enter company details manually"
             )
 
-        lock_token = await self.cache.acquire_lock(name)
+        try:
+            lock_token = await self._within_budget(
+                lambda: self.cache.acquire_lock(name), started_at
+            )
+        except asyncio.TimeoutError:
+            return self._partial("company intelligence search timed out")
         if lock_token is None:
-            cached = await self.cache.wait_for_result(name, self._remaining(started_at))
+            try:
+                cached = await self._within_budget(
+                    lambda: self.cache.wait_for_result(name, self._remaining(started_at)),
+                    started_at,
+                )
+            except asyncio.TimeoutError:
+                return self._partial("company intelligence search timed out")
             if cached is not None:
                 return cached
             return self._partial("company intelligence search is already in progress")
 
         try:
             if not request.force_refresh:
-                cached = await self.cache.get(name)
+                try:
+                    cached = await self._within_budget(
+                        lambda: self.cache.get(name), started_at
+                    )
+                except asyncio.TimeoutError:
+                    return self._partial("company intelligence search timed out")
                 if cached is not None:
                     return cached
 
@@ -111,10 +139,15 @@ class CompanyIntelligenceService:
                 partial=bool(warnings),
                 warnings=warnings,
             )
-            await self.cache.set(name, result)
+            if self._remaining(started_at) > 0:
+                try:
+                    await self._within_budget(lambda: self.cache.set(name, result), started_at)
+                except asyncio.TimeoutError:
+                    result.warnings.append("company intelligence cache write was skipped")
+                    result.partial = True
             return result
         finally:
-            await self.cache.release_lock(name, lock_token)
+            await self._release_lock_with_budget(name, lock_token, started_at)
 
     async def _search_providers(
         self, name: str, started_at: float
@@ -127,7 +160,7 @@ class CompanyIntelligenceService:
         for task in pending:
             task.cancel()
         if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
+            await self._cancel_pending(pending, started_at)
             warnings.append("company intelligence provider search timed out")
 
         candidates: list[CompanyCandidate] = []
@@ -151,13 +184,13 @@ class CompanyIntelligenceService:
         warnings: list[str] = []
         if candidate.official_website is not None:
             try:
-                discovered = await asyncio.wait_for(
-                    discover_recruitment_links(
+                discovered = await self._within_budget(
+                    lambda: discover_recruitment_links(
                         homepage_url=candidate.official_website,
                         company_name=candidate.company_name,
                         validator=self.link_validator,
                     ),
-                    timeout=self._remaining(started_at),
+                    started_at,
                 )
                 links.extend(discovered)
             except Exception:
@@ -181,7 +214,7 @@ class CompanyIntelligenceService:
         for task in pending:
             task.cancel()
         if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
+            await self._cancel_pending(pending, started_at)
             warnings.append("recruitment link verification was incomplete")
         verified: list[RecruitmentLinkCandidate] = []
         for task in done:
@@ -251,6 +284,28 @@ class CompanyIntelligenceService:
         for link in getattr(company, "recruitment_links", []):
             if isinstance(link, RecruitmentLinkCandidate):
                 links.append(link)
+                continue
+            channel = getattr(link, "channel", "third_party")
+            channel_type = channel.value if hasattr(channel, "value") else str(channel)
+            link_type = getattr(link, "link_type", None)
+            type_value = link_type.value if hasattr(link_type, "value") else str(link_type)
+            links.append(
+                RecruitmentLinkCandidate(
+                    title=getattr(link, "source_title", None) or link.url,
+                    url=link.url,
+                    channel_type=channel_type,
+                    claimed_official=type_value == "official",
+                    source_url=getattr(link, "source_url", None),
+                    evidence=getattr(link, "source", None),
+                    verification_status=(
+                        getattr(link, "verification_status", None)
+                        or VerificationStatus.UNVERIFIED
+                    ),
+                    valid_status=getattr(link, "valid_status", None) or "unknown",
+                    http_status=getattr(link, "http_status", None),
+                    final_url=getattr(link, "final_url", None),
+                )
+            )
         return CompanyCandidate(
             company_name=company.full_name,
             short_name=getattr(company, "short_name", None),
@@ -265,6 +320,57 @@ class CompanyIntelligenceService:
 
     def _remaining(self, started_at: float) -> float:
         return max(0.0, self.overall_timeout_seconds - (monotonic() - started_at))
+
+    async def _within_budget(
+        self,
+        operation: Callable[[], Awaitable[Any]],
+        started_at: float,
+    ) -> Any:
+        remaining = self._remaining(started_at)
+        if remaining <= 0:
+            raise asyncio.TimeoutError
+        task = asyncio.create_task(operation())
+        done, _ = await asyncio.wait({task}, timeout=remaining)
+        if task not in done:
+            task.cancel()
+            self._drain(task)
+            raise asyncio.TimeoutError
+        return task.result()
+
+    async def _cancel_pending(
+        self, pending: set[asyncio.Task[Any]], started_at: float
+    ) -> None:
+        for task in pending:
+            task.cancel()
+            self._drain(task)
+        remaining = self._remaining(started_at)
+        if remaining <= 0:
+            return
+        await asyncio.wait(pending, timeout=remaining)
+
+    async def _release_lock_with_budget(
+        self, name: str, token: str, started_at: float
+    ) -> None:
+        task = asyncio.create_task(self.cache.release_lock(name, token))
+        self._drain(task)
+        remaining = self._remaining(started_at)
+        if remaining <= 0:
+            return
+        try:
+            await asyncio.wait_for(asyncio.shield(task), remaining)
+        except asyncio.TimeoutError:
+            return
+
+    @staticmethod
+    def _drain(task: asyncio.Task[Any]) -> None:
+        def consume(done: asyncio.Task[Any]) -> None:
+            if not done.cancelled():
+                try:
+                    done.exception()
+                except Exception:
+                    pass
+
+        task.add_done_callback(consume)
 
     @staticmethod
     def _partial(warning: str) -> CompanyIntelligenceSearchResult:

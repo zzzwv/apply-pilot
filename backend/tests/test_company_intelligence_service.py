@@ -1,6 +1,7 @@
 import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from time import monotonic
 
 import pytest
 
@@ -113,6 +114,63 @@ class NoNetworkValidator:
         return ValidatedLink(LinkStatus.UNKNOWN, None, "https://www.acme.example", "not fetched")
 
 
+class ScalarResult:
+    def __init__(self, first: object | None, all_values: list[object]) -> None:
+        self._first = first
+        self._all_values = all_values
+
+    def scalars(self) -> "ScalarResult":
+        return self
+
+    def first(self) -> object | None:
+        return self._first
+
+    def all(self) -> list[object]:
+        return self._all_values
+
+
+class NormalizationFallbackSession:
+    def __init__(self, company: object) -> None:
+        self.company = company
+        self.executions = 0
+
+    async def execute(self, statement: object) -> ScalarResult:
+        del statement
+        self.executions += 1
+        return ScalarResult(None, [self.company])
+
+
+class StallingCache:
+    async def get(self, normalized_name: str):
+        del normalized_name
+        await asyncio.sleep(0.05)
+        return None
+
+    async def allow_request(self, actor_id: object) -> bool:
+        del actor_id
+        return True
+
+    async def acquire_lock(self, normalized_name: str) -> str:
+        del normalized_name
+        return "lock"
+
+    async def release_lock(self, normalized_name: str, token: str) -> None:
+        del normalized_name, token
+
+    async def set(self, normalized_name: str, result: object) -> None:
+        del normalized_name, result
+
+
+class AtomicRateRedis:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple[object, ...]]] = []
+
+    async def eval(self, script: str, key_count: int, *args: object) -> int:
+        self.calls.append((script, args))
+        assert key_count == 1
+        return 1
+
+
 def service(
     repository: LocalRepository,
     providers: list[StaticProvider],
@@ -146,7 +204,10 @@ async def test_exact_local_match_returns_candidate_without_calling_kimi() -> Non
     result = await service(
         LocalRepository(LocalCompany(full_name="Acme Corporation", industry="Local software")),
         [provider],
-    ).search_company(CompanyIntelligenceSearchRequest(company_name=" Acme Corporation "))
+    ).search_company(
+        CompanyIntelligenceSearchRequest(company_name=" Acme Corporation "),
+        actor_id="local-exact-user",
+    )
 
     assert result.partial is False
     assert result.company is not None
@@ -161,12 +222,40 @@ async def test_alias_local_match_returns_company_without_calling_kimi() -> None:
     provider = StaticProvider(candidate())
     repository = LocalRepository(LocalCompany(full_name="Acme Corporation"))
     result = await service(repository, [provider]).search_company(
-        CompanyIntelligenceSearchRequest(company_name="Acme")
+        CompanyIntelligenceSearchRequest(company_name="Acme"), actor_id="local-alias-user"
     )
 
     assert repository.seen_names == ["acme"]
     assert result.company is not None
     assert result.company.company_name == "acme corporation"
+    assert provider.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_repository_normalization_fallback_matches_unicode_full_name_before_kimi() -> None:
+    """Protects equivalent stored Unicode names from falling through to a remote search."""
+    from app.models import Company
+    from app.repositories.company import CompanyRepository
+    from app.services.company_intelligence_service import CompanyIntelligenceService
+
+    company = Company(full_name="ＡＣＭＥ　ＣＯＲＰＯＲＡＴＩＯＮ")
+    session = NormalizationFallbackSession(company)
+    provider = StaticProvider(candidate())
+    intelligence = CompanyIntelligenceService(
+        repository=CompanyRepository(session),
+        providers=[provider],
+        cache=StallingCache(),
+        link_validator=NoNetworkValidator(),
+    )
+
+    result = await intelligence.search_company(
+        CompanyIntelligenceSearchRequest(company_name=" AcMe   Corporation "),
+        actor_id="user-normalized",
+    )
+
+    assert result.company is not None
+    assert result.company.company_name == "acme corporation"
+    assert session.executions == 2
     assert provider.calls == 0
 
 
@@ -177,7 +266,10 @@ async def test_slow_local_lookup_uses_the_overall_budget_before_remote_work() ->
 
     result = await service(
         SlowLocalRepository(), [provider], overall_timeout_seconds=0.01
-    ).search_company(CompanyIntelligenceSearchRequest(company_name="Acme Corporation"))
+    ).search_company(
+        CompanyIntelligenceSearchRequest(company_name="Acme Corporation"),
+        actor_id="local-timeout-user",
+    )
 
     assert result.company is None
     assert result.partial is True
@@ -200,10 +292,11 @@ async def test_cache_hit_avoids_provider_and_redis_loss_uses_memory_cache() -> N
     intelligence = service(LocalRepository(), [provider], cache=cache)
 
     first = await intelligence.search_company(
-        CompanyIntelligenceSearchRequest(company_name="Acme Corporation")
+        CompanyIntelligenceSearchRequest(company_name="Cache Corporation"), actor_id="cache-user"
     )
     second = await intelligence.search_company(
-        CompanyIntelligenceSearchRequest(company_name="  acme corporation  ")
+        CompanyIntelligenceSearchRequest(company_name="  cache corporation  "),
+        actor_id="cache-user",
     )
 
     assert first.company is not None
@@ -219,10 +312,12 @@ async def test_force_refresh_bypasses_cache_but_still_runs_remote_path() -> None
     intelligence = service(LocalRepository(), [provider])
 
     await intelligence.search_company(
-        CompanyIntelligenceSearchRequest(company_name="Acme Corporation")
+        CompanyIntelligenceSearchRequest(company_name="Refresh Corporation"),
+        actor_id="refresh-user",
     )
     refreshed = await intelligence.search_company(
-        CompanyIntelligenceSearchRequest(company_name="Acme Corporation", force_refresh=True)
+        CompanyIntelligenceSearchRequest(company_name="Refresh Corporation", force_refresh=True),
+        actor_id="refresh-user",
     )
 
     assert refreshed.company is not None
@@ -234,11 +329,11 @@ async def test_concurrent_requests_coalesce_behind_one_cache_lock() -> None:
     """Protects a cache miss from multiplying the same Kimi request."""
     provider = BlockingProvider(candidate())
     intelligence = service(LocalRepository(), [provider])
-    request = CompanyIntelligenceSearchRequest(company_name="Acme Corporation")
+    request = CompanyIntelligenceSearchRequest(company_name="Lock Corporation")
 
-    first = asyncio.create_task(intelligence.search_company(request))
+    first = asyncio.create_task(intelligence.search_company(request, actor_id="lock-user"))
     await provider.started.wait()
-    second = asyncio.create_task(intelligence.search_company(request))
+    second = asyncio.create_task(intelligence.search_company(request, actor_id="lock-user"))
     await asyncio.sleep(0)
     provider.release.set()
     first_result, second_result = await asyncio.gather(first, second)
@@ -255,10 +350,11 @@ async def test_rate_limit_returns_manual_fallback_without_provider_call() -> Non
     intelligence = service(LocalRepository(), [provider], rate_limit=1)
 
     first = await intelligence.search_company(
-        CompanyIntelligenceSearchRequest(company_name="Acme Corporation")
+        CompanyIntelligenceSearchRequest(company_name="Rate Corporation"), actor_id="rate-user"
     )
     limited = await intelligence.search_company(
-        CompanyIntelligenceSearchRequest(company_name="Acme Corporation", force_refresh=True)
+        CompanyIntelligenceSearchRequest(company_name="Rate Corporation", force_refresh=True),
+        actor_id="rate-user",
     )
 
     assert first.company is not None
@@ -267,6 +363,123 @@ async def test_rate_limit_returns_manual_fallback_without_provider_call() -> Non
     assert limited.allow_manual_input is True
     assert "rate limit" in limited.warnings[0]
     assert provider.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_isolated_by_actor_id() -> None:
+    """Protects one user's Kimi budget from consuming another user's request quota."""
+    provider = StaticProvider(candidate())
+    intelligence = service(LocalRepository(), [provider], rate_limit=1)
+    request = CompanyIntelligenceSearchRequest(company_name="Actor Rate Corporation")
+
+    await intelligence.search_company(request, actor_id="alice")
+    alice_limited = await intelligence.search_company(
+        CompanyIntelligenceSearchRequest(company_name="Actor Rate Corporation", force_refresh=True),
+        actor_id="alice",
+    )
+    bob = await intelligence.search_company(
+        CompanyIntelligenceSearchRequest(company_name="Actor Rate Corporation", force_refresh=True),
+        actor_id="bob",
+    )
+
+    assert alice_limited.company is None
+    assert bob.company is not None
+    assert provider.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_default_memory_state_coalesces_cache_instances_during_redis_loss() -> None:
+    """Protects process-local fallback locks from fragmenting across service instances."""
+    from app.company_intelligence.cache import CompanyIntelligenceCache
+
+    first = CompanyIntelligenceCache(
+        redis=None,
+        ttl_seconds=60,
+        rate_limit_max_requests=10,
+        rate_limit_window_seconds=60,
+    )
+    second = CompanyIntelligenceCache(
+        redis=None,
+        ttl_seconds=60,
+        rate_limit_max_requests=10,
+        rate_limit_window_seconds=60,
+    )
+
+    token = await first.acquire_lock("process-shared-default-state")
+
+    assert token is not None
+    assert await second.acquire_lock("process-shared-default-state") is None
+    await first.release_lock("process-shared-default-state", token)
+
+
+@pytest.mark.asyncio
+async def test_cache_rate_increment_sets_expiry_in_one_redis_script() -> None:
+    """Protects a Redis counter from becoming permanent between increment and expiry calls."""
+    from app.company_intelligence.cache import CompanyIntelligenceCache
+
+    redis = AtomicRateRedis()
+    cache = CompanyIntelligenceCache(
+        redis=redis,
+        ttl_seconds=60,
+        rate_limit_max_requests=10,
+        rate_limit_window_seconds=60,
+    )
+
+    allowed = await cache.allow_request("atomic-rate-user")
+
+    assert allowed is True
+    assert len(redis.calls) == 1
+    assert "expire" in redis.calls[0][0].casefold()
+
+
+@pytest.mark.asyncio
+async def test_cache_stage_cannot_extend_the_overall_deadline() -> None:
+    """Protects a stalled cache client from stretching a ten-second search budget."""
+    provider = StaticProvider(candidate())
+    intelligence = service(
+        LocalRepository(),
+        [provider],
+        cache=StallingCache(),
+        overall_timeout_seconds=0.01,
+    )
+    started = monotonic()
+
+    result = await intelligence.search_company(
+        CompanyIntelligenceSearchRequest(company_name="Acme Corporation"),
+        actor_id="deadline-user",
+    )
+
+    assert monotonic() - started < 0.04
+    assert result.company is None
+    assert result.warnings == ["company intelligence search timed out"]
+    assert provider.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_local_orm_recruitment_link_is_returned_as_editable_candidate() -> None:
+    """Protects saved recruitment links from disappearing in a local-first preview."""
+    from app.models import RecruitmentLink
+    from app.models.enums import RecruitmentChannel, RecruitmentLinkType
+
+    link = RecruitmentLink(
+        url="https://jobs.acme.example/campus",
+        channel=RecruitmentChannel.OFFICIAL_CAMPUS,
+        link_type=RecruitmentLinkType.OFFICIAL,
+        source_title="Acme campus recruitment",
+        source="local_record",
+        source_url="https://www.acme.example/careers",
+    )
+    local = LocalCompany(full_name="Acme Corporation", recruitment_links=[link])
+
+    result = await service(LocalRepository(local), [StaticProvider(candidate())]).search_company(
+        CompanyIntelligenceSearchRequest(company_name="Acme Corporation"),
+        actor_id="link-user",
+    )
+
+    assert result.company is not None
+    assert [(item.url, item.channel_type, item.title) for item in result.recruitment_links] == [
+        ("https://jobs.acme.example/campus", "official_campus", "Acme campus recruitment")
+    ]
 
 
 @pytest.mark.asyncio
@@ -281,7 +494,8 @@ async def test_partial_kimi_failure_keeps_successful_candidate_visible() -> None
     )
 
     result = await service(LocalRepository(), [successful, unavailable]).search_company(
-        CompanyIntelligenceSearchRequest(company_name="Acme Corporation")
+        CompanyIntelligenceSearchRequest(company_name="Partial Corporation"),
+        actor_id="partial-user",
     )
 
     assert result.company is not None
@@ -296,7 +510,8 @@ async def test_conflicting_provider_candidates_remain_visible_as_partial_conflic
     second = StaticProvider(candidate(website="https://two.acme.example"))
 
     result = await service(LocalRepository(), [first, second]).search_company(
-        CompanyIntelligenceSearchRequest(company_name="Acme Corporation")
+        CompanyIntelligenceSearchRequest(company_name="Conflict Corporation"),
+        actor_id="conflict-user",
     )
 
     assert result.company is None
