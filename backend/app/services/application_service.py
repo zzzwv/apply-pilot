@@ -6,7 +6,12 @@ from app.core.errors import AppError, ErrorCode
 from app.models import ApplicationStatusLog, JobApplication, User
 from app.repositories.application import ApplicationRepository
 from app.repositories.company import CompanyRepository
-from app.schemas.application import ApplicationCreate, ApplicationStatusUpdate, ApplicationUpdate
+from app.schemas.application import (
+    ApplicationCreate,
+    ApplicationFilterParams,
+    ApplicationStatusUpdate,
+    ApplicationUpdate,
+)
 
 
 class ApplicationService:
@@ -37,8 +42,7 @@ class ApplicationService:
         except Exception:
             await self.session.rollback()
             raise
-        await self.session.refresh(application)
-        return application
+        return await self.get_application(application.id, current_user)
 
     async def get_application(self, application_id: UUID, current_user: User) -> JobApplication:
         application = await self.applications.get_for_user(application_id, current_user.id)
@@ -47,9 +51,9 @@ class ApplicationService:
         return application
 
     async def list_applications(
-        self, current_user: User, page: int, page_size: int
+        self, current_user: User, filters: ApplicationFilterParams
     ) -> tuple[list[JobApplication], int]:
-        return await self.applications.list_for_user(current_user.id, page, page_size)
+        return await self.applications.list_for_user(current_user.id, filters)
 
     async def update_application(
         self, application_id: UUID, payload: ApplicationUpdate, current_user: User
@@ -61,8 +65,7 @@ class ApplicationService:
         for field, value in values.items():
             setattr(application, field, value)
         await self.session.commit()
-        await self.session.refresh(application)
-        return application
+        return await self.get_application(application.id, current_user)
 
     async def delete_application(self, application_id: UUID, current_user: User) -> int:
         application = await self.get_application(application_id, current_user)
@@ -105,8 +108,7 @@ class ApplicationService:
         except Exception:
             await self.session.rollback()
             raise
-        await self.session.refresh(application)
-        return application
+        return await self.get_application(application.id, current_user)
 
     async def get_status_logs(
         self, application_id: UUID, current_user: User

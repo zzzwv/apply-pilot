@@ -14,7 +14,7 @@ class CompanyService:
     async def create(self, payload: CompanyCreate) -> Company:
         if await self.companies.get_by_full_name(payload.full_name):
             raise AppError(ErrorCode.APPLICATION_DUPLICATE, "Company already exists", 409)
-        company = self.companies.add(Company(full_name=payload.full_name))
+        company = self.companies.add(Company(**payload.model_dump()))
         await self.session.commit()
         await self.session.refresh(company)
         return company

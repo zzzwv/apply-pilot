@@ -39,11 +39,15 @@ def _register_and_headers(client: TestClient) -> dict[str, str]:
     return {"Authorization": f"Bearer {login.json()['data']['access_token']}"}
 
 
-def _create_company(client: TestClient, headers: dict[str, str]) -> str:
+def _create_company(
+    client: TestClient, headers: dict[str, str], **overrides: object
+) -> str:
+    payload: dict[str, object] = {"full_name": f"Phase 2 Test Company {uuid.uuid4().hex}"}
+    payload.update(overrides)
     response = client.post(
         "/api/v1/companies",
         headers=headers,
-        json={"full_name": f"Phase 2 Test Company {uuid.uuid4().hex}"},
+        json=payload,
     )
     assert response.status_code == 201
     return response.json()["data"]["id"]
@@ -295,3 +299,228 @@ def test_delete_application_removes_its_status_logs(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json()["data"] == {"deleted_count": 1}
     assert logs.status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("keyword", "job_title", "note"),
+    [
+        ("Example Holdings", "Platform Engineer", "ordinary note"),
+        ("Example", "Platform Engineer", "ordinary note"),
+        ("Platform", "Platform Engineer", "ordinary note"),
+        ("Artificial", "Platform Engineer", "ordinary note"),
+        ("STATE_OWNED", "Platform Engineer", "ordinary note"),
+        ("unique private note", "Platform Engineer", "unique private note"),
+        ("example", "Platform Engineer", "ordinary note"),
+    ],
+)
+def test_keyword_search_matches_every_required_field_case_insensitively(
+    client: TestClient, keyword: str, job_title: str, note: str
+) -> None:
+    """Breaks if any required search field is omitted or ILIKE becomes case-sensitive."""
+    headers = _register_and_headers(client)
+    company_id = _create_company(
+        client,
+        headers,
+        full_name=f"Example Holdings {uuid.uuid4().hex}",
+        short_name="Example",
+        industry="Artificial Intelligence",
+        nature="STATE_OWNED",
+    )
+    expected = _create_application(client, headers, company_id, job_title=job_title, note=note)
+    unrelated_company = _create_company(
+        client, headers, full_name=f"Other Company {uuid.uuid4().hex}"
+    )
+    _create_application(
+        client,
+        headers,
+        unrelated_company,
+        job_title="Unrelated Role",
+        note="unrelated",
+    )
+
+    response = client.get(f"/api/v1/applications?keyword={keyword}", headers=headers)
+
+    assert response.status_code == 200
+    assert {item["id"] for item in response.json()["data"]["items"]} == {expected["id"]}
+
+
+def test_empty_keyword_returns_the_normal_owned_list(client: TestClient) -> None:
+    """Breaks if whitespace adds a meaningless search predicate or changes list results."""
+    headers = _register_and_headers(client)
+    company_id = _create_company(client, headers)
+    first = _create_application(client, headers, company_id, job_title="First")
+    second = _create_application(client, headers, company_id, job_title="Second")
+
+    response = client.get("/api/v1/applications?keyword=%20%20%20", headers=headers)
+
+    assert response.status_code == 200
+    assert {item["id"] for item in response.json()["data"]["items"]} == {first["id"], second["id"]}
+
+
+def test_combined_filters_return_only_the_matching_owned_application(client: TestClient) -> None:
+    """Breaks if any filter overwrites another instead of being AND-combined."""
+    headers = _register_and_headers(client)
+    matching_name = f"AI State Company {uuid.uuid4().hex}"
+    matching_company = _create_company(
+        client,
+        headers,
+        full_name=matching_name,
+        industry="Artificial Intelligence",
+        nature="STATE_OWNED",
+        size="1000-5000",
+    )
+    other_company = _create_company(
+        client,
+        headers,
+        full_name=f"Other Private Company {uuid.uuid4().hex}",
+        industry="Internet",
+        nature="PRIVATE",
+        size="50-200",
+    )
+    matching = _create_application(
+        client,
+        headers,
+        matching_company,
+        job_title="AI Engineer",
+        application_type="autumn_fulltime",
+        application_date="2026-08-20",
+        current_status="FIRST_INTERVIEW",
+    )
+    _create_application(
+        client,
+        headers,
+        other_company,
+        job_title="AI Engineer",
+        application_type="autumn_fulltime",
+        application_date="2026-08-20",
+        current_status="FIRST_INTERVIEW",
+    )
+
+    response = client.get(
+        "/api/v1/applications?keyword=AI&status=FIRST_INTERVIEW,SECOND_INTERVIEW"
+        "&company_nature=STATE_OWNED&application_type=autumn_fulltime"
+        "&industry=Artificial%20Intelligence&company_size=1000-5000"
+        "&date_from=2026-08-01&date_to=2026-08-31",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total"] == 1
+    assert [item["id"] for item in data["items"]] == [matching["id"]]
+    assert data["items"][0]["company"] == {
+        "id": matching_company,
+        "full_name": matching_name,
+        "short_name": None,
+        "industry": "Artificial Intelligence",
+        "nature": "STATE_OWNED",
+        "size": "1000-5000",
+    }
+
+
+def test_multiple_status_filter_and_filtered_pagination_count_results(client: TestClient) -> None:
+    """Breaks if multi-value status filters or post-filter totals and offsets are wrong."""
+    headers = _register_and_headers(client)
+    company_id = _create_company(client, headers)
+    for status in ("APPLIED", "FIRST_INTERVIEW", "SECOND_INTERVIEW", "RESUME_REJECTED"):
+        _create_application(client, headers, company_id, current_status=status)
+
+    response = client.get(
+        "/api/v1/applications?status=APPLIED,FIRST_INTERVIEW,SECOND_INTERVIEW&page=2&page_size=2",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total"] == 3
+    assert data["page"] == 2
+    assert data["page_size"] == 2
+    assert len(data["items"]) == 1
+    assert data["items"][0]["current_status"] in {"APPLIED", "FIRST_INTERVIEW", "SECOND_INTERVIEW"}
+
+
+def test_sorts_by_date_company_name_and_business_status_priority(client: TestClient) -> None:
+    """Breaks if sorting ignores dates/company display names or uses enum text for status order."""
+    headers = _register_and_headers(client)
+    zulu_company = _create_company(
+        client, headers, full_name=f"Zulu {uuid.uuid4().hex}", short_name="Zulu"
+    )
+    alpha_company = _create_company(
+        client, headers, full_name=f"Alpha {uuid.uuid4().hex}", short_name="Alpha"
+    )
+    newest = _create_application(
+        client,
+        headers,
+        zulu_company,
+        application_date="2026-08-20",
+        current_status="OFFER_RECEIVED",
+    )
+    oldest = _create_application(
+        client, headers, alpha_company, application_date="2026-08-01", current_status="APPLIED"
+    )
+    progressing = _create_application(
+        client,
+        headers,
+        alpha_company,
+        application_date="2026-08-10",
+        current_status="FIRST_INTERVIEW",
+    )
+
+    date_asc = client.get("/api/v1/applications?sort=application_date_asc", headers=headers)
+    company_asc = client.get("/api/v1/applications?sort=company_name_asc", headers=headers)
+    status_priority = client.get("/api/v1/applications?sort=status_priority_desc", headers=headers)
+    default = client.get("/api/v1/applications", headers=headers)
+
+    assert [item["id"] for item in date_asc.json()["data"]["items"]] == [
+        oldest["id"],
+        progressing["id"],
+        newest["id"],
+    ]
+    assert {item["id"] for item in company_asc.json()["data"]["items"][:2]} == {
+        oldest["id"],
+        progressing["id"],
+    }
+    assert status_priority.json()["data"]["items"][0]["id"] == progressing["id"]
+    assert default.json()["data"]["items"][0]["id"] == newest["id"]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "status=UNKNOWN_STATUS",
+        "application_type=unknown_type",
+        "sort=unknown_sort",
+        "page=0",
+        "page_size=0",
+        "page_size=101",
+        "date_from=2026-08-31&date_to=2026-08-01",
+    ],
+)
+def test_invalid_list_filter_parameters_are_rejected(client: TestClient, query: str) -> None:
+    """Breaks if malformed filters are silently ignored instead of returning validation errors."""
+    headers = _register_and_headers(client)
+
+    response = client.get(f"/api/v1/applications?{query}", headers=headers)
+
+    assert response.status_code == 422
+    assert response.json()["code"] == 40004
+
+
+def test_search_input_is_parameterized_and_never_leaks_other_users_rows(client: TestClient) -> None:
+    """Breaks if keyword matching interpolates SQL or searches before applying owner scope."""
+    owner_headers = _register_and_headers(client)
+    other_headers = _register_and_headers(client)
+    company_id = _create_company(
+        client, owner_headers, full_name=f"Shared Search Company {uuid.uuid4().hex}"
+    )
+    _create_application(client, owner_headers, company_id, note="shared secret")
+    other = _create_application(client, other_headers, company_id, note="shared secret")
+
+    injection = client.get(
+        "/api/v1/applications?keyword=%27%20OR%201%3D1%20--", headers=owner_headers
+    )
+    shared = client.get("/api/v1/applications?keyword=shared%20secret", headers=owner_headers)
+
+    assert injection.status_code == 200
+    assert injection.json()["data"]["items"] == []
+    assert {item["id"] for item in shared.json()["data"]["items"]}.isdisjoint({other["id"]})

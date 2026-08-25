@@ -1,5 +1,11 @@
 export type ApplicationType = "autumn_fulltime" | "spring_fulltime" | "summer_internship" | "daily_internship";
 
+export type ApplicationSort =
+  | "application_date_asc"
+  | "application_date_desc"
+  | "company_name_asc"
+  | "status_priority_desc";
+
 export type ApplicationStatus =
   | "NOT_APPLIED"
   | "APPLIED"
@@ -15,6 +21,15 @@ export type ApplicationStatus =
   | "INTERVIEW_REJECTED"
   | "PROCESS_TERMINATED"
   | "SIGNED";
+
+export type ApplicationCompany = {
+  id: string;
+  full_name: string;
+  short_name: string | null;
+  industry: string | null;
+  nature: string | null;
+  size: string | null;
+};
 
 export type Application = {
   id: string;
@@ -34,9 +49,10 @@ export type Application = {
   current_status: ApplicationStatus;
   created_at: string;
   updated_at: string;
+  company: ApplicationCompany;
 };
 
-export type ApplicationInput = Omit<Application, "id" | "user_id" | "created_at" | "updated_at">;
+export type ApplicationInput = Omit<Application, "id" | "user_id" | "created_at" | "updated_at" | "company">;
 export type ApplicationUpdate = Partial<Omit<ApplicationInput, "current_status">>;
 
 export type ApplicationList = {
@@ -44,6 +60,20 @@ export type ApplicationList = {
   total: number;
   page: number;
   page_size: number;
+};
+
+export type ApplicationListParams = {
+  keyword?: string;
+  status?: ApplicationStatus[];
+  company_nature?: string[];
+  application_type?: ApplicationType[];
+  industry?: string[];
+  date_from?: string;
+  date_to?: string;
+  company_size?: string[];
+  sort?: ApplicationSort;
+  page?: number;
+  page_size?: number;
 };
 
 export type ApplicationStatusLog = {

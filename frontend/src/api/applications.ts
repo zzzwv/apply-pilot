@@ -3,6 +3,7 @@ import type {
   Application,
   ApplicationInput,
   ApplicationList,
+  ApplicationListParams,
   ApplicationStatusLog,
   ApplicationStatus,
   ApplicationUpdate,
@@ -12,8 +13,23 @@ export function toApplicationUpdate({ current_status: _, ...payload }: Applicati
   return payload;
 }
 
-export async function listApplications(page = 1, pageSize = 20): Promise<ApplicationList> {
-  return unwrap(apiClient.get("/applications", { params: { page, page_size: pageSize } }));
+function serializeListParams(params: ApplicationListParams): Record<string, string | number> {
+  const serialized: Record<string, string | number> = {
+    page: params.page ?? 1,
+    page_size: params.page_size ?? 20,
+  };
+  const listFields = ["status", "company_nature", "application_type", "industry", "company_size"] as const;
+  for (const field of listFields) {
+    if (params[field]?.length) serialized[field] = params[field].join(",");
+  }
+  for (const field of ["keyword", "date_from", "date_to", "sort"] as const) {
+    if (params[field]) serialized[field] = params[field];
+  }
+  return serialized;
+}
+
+export async function listApplications(params: ApplicationListParams = {}): Promise<ApplicationList> {
+  return unwrap(apiClient.get("/applications", { params: serializeListParams(params) }));
 }
 
 export async function getApplication(applicationId: string): Promise<Application> {

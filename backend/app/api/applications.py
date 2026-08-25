@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated
 from uuid import UUID
 
@@ -6,11 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
 from app.core.database import get_session
+from app.core.errors import AppError, ErrorCode
 from app.core.responses import success_response
 from app.models import User
+from app.models.enums import ApplicationStatus, ApplicationType
 from app.schemas.application import (
     ApplicationBatchDeleteRequest,
     ApplicationCreate,
+    ApplicationFilterParams,
     ApplicationListResponse,
     ApplicationRead,
     ApplicationStatusLogListResponse,
@@ -24,6 +28,56 @@ from app.services.application_service import ApplicationService
 router = APIRouter(prefix="/applications", tags=["applications"])
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
 CurrentUserDependency = Annotated[User, Depends(get_current_user)]
+
+
+def _split_values(values: list[str] | None) -> list[str]:
+    return [item.strip() for value in values or [] for item in value.split(",") if item.strip()]
+
+
+def _parse_enum_values(
+    values: list[str] | None, enum_type: type[ApplicationStatus | ApplicationType]
+):
+    try:
+        return [enum_type(value) for value in _split_values(values)]
+    except ValueError as exc:
+        raise AppError(ErrorCode.STATUS_INVALID, "Invalid request", 422) from exc
+
+
+def get_application_filter_params(
+    keyword: str | None = Query(default=None, max_length=255),
+    status: list[str] | None = Query(default=None),
+    company_nature: list[str] | None = Query(default=None),
+    application_type: list[str] | None = Query(default=None),
+    industry: list[str] | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    company_size: list[str] | None = Query(default=None),
+    sort: str = Query(default="application_date_desc"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> ApplicationFilterParams:
+    try:
+        filters = ApplicationFilterParams(
+            keyword=keyword.strip() or None if keyword else None,
+            statuses=_parse_enum_values(status, ApplicationStatus),
+            company_natures=_split_values(company_nature),
+            application_types=_parse_enum_values(application_type, ApplicationType),
+            industries=_split_values(industry),
+            date_from=date_from,
+            date_to=date_to,
+            company_sizes=_split_values(company_size),
+            sort=sort,
+            page=page,
+            page_size=page_size,
+        )
+    except ValueError as exc:
+        raise AppError(ErrorCode.STATUS_INVALID, "Invalid request", 422) from exc
+    if filters.date_from and filters.date_to and filters.date_from > filters.date_to:
+        raise AppError(ErrorCode.STATUS_INVALID, "Invalid request", 422)
+    return filters
+
+
+FilterDependency = Annotated[ApplicationFilterParams, Depends(get_application_filter_params)]
 
 
 @router.post("")
@@ -40,17 +94,16 @@ async def create_application(
 async def list_applications(
     session: SessionDependency,
     current_user: CurrentUserDependency,
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    filters: FilterDependency,
 ):
     applications, total = await ApplicationService(session).list_applications(
-        current_user, page, page_size
+        current_user, filters
     )
     payload = ApplicationListResponse(
         items=[ApplicationRead.model_validate(application) for application in applications],
         total=total,
-        page=page,
-        page_size=page_size,
+        page=filters.page,
+        page_size=filters.page_size,
     )
     return success_response(payload.model_dump(mode="json"))
 

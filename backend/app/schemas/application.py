@@ -1,9 +1,31 @@
 from datetime import date, datetime
+from enum import Enum
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from app.models.enums import ApplicationStatus, ApplicationType
+
+
+class ApplicationSort(str, Enum):
+    APPLICATION_DATE_ASC = "application_date_asc"
+    APPLICATION_DATE_DESC = "application_date_desc"
+    COMPANY_NAME_ASC = "company_name_asc"
+    STATUS_PRIORITY_DESC = "status_priority_desc"
+
+
+class ApplicationFilterParams(BaseModel):
+    keyword: str | None = None
+    statuses: list[ApplicationStatus] = []
+    company_natures: list[str] = []
+    application_types: list[ApplicationType] = []
+    industries: list[str] = []
+    date_from: date | None = None
+    date_to: date | None = None
+    company_sizes: list[str] = []
+    sort: ApplicationSort = ApplicationSort.APPLICATION_DATE_DESC
+    page: int = 1
+    page_size: int = 20
 
 
 class ApplicationCreate(BaseModel):
@@ -41,6 +63,17 @@ class ApplicationUpdate(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class ApplicationCompanyRead(BaseModel):
+    id: UUID
+    full_name: str
+    short_name: str | None
+    industry: str | None
+    nature: str | None
+    size: str | None
+
+    model_config = {"from_attributes": True}
+
+
 class ApplicationRead(BaseModel):
     id: UUID
     user_id: UUID
@@ -59,6 +92,7 @@ class ApplicationRead(BaseModel):
     current_status: ApplicationStatus
     created_at: datetime
     updated_at: datetime
+    company: ApplicationCompanyRead
 
     model_config = {"from_attributes": True}
 
