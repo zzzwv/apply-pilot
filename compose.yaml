@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: job_tracker
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports: ["5432:5432"]
+    volumes: ["./.runtime/postgres:/var/lib/postgresql/data"]
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    volumes: ["./.runtime/redis:/data"]
+  backend:
+    build: ./backend
+    environment:
+      JOB_TRACKER_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/job_tracker
+      JOB_TRACKER_REDIS_URL: redis://redis:6379/0
+      JOB_TRACKER_JWT_SECRET_KEY: ${JOB_TRACKER_JWT_SECRET_KEY}
+    ports: ["8000:8000"]
+    depends_on: [postgres, redis]
+  frontend:
+    build: ./frontend
+    ports: ["5173:80"]
+    depends_on: [backend]
