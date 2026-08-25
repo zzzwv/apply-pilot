@@ -41,6 +41,8 @@ def _default_status(code: ErrorCode) -> int:
         return 409
     if code is ErrorCode.PERMISSION_DENIED:
         return 403
+    if code in {ErrorCode.COMPANY_NOT_FOUND, ErrorCode.APPLICATION_NOT_FOUND}:
+        return 404
     if code is ErrorCode.SERVICE_UNAVAILABLE:
         return 503
     if code is ErrorCode.INTERNAL_ERROR:

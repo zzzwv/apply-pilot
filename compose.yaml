@@ -12,7 +12,11 @@ services:
     ports: ["6379:6379"]
     volumes: ["./.runtime/redis:/data"]
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        BACKEND_BASE_IMAGE: ${JOB_TRACKER_BACKEND_BASE_IMAGE:-python:3.12-slim}
+        SKIP_DEPENDENCY_INSTALL: ${JOB_TRACKER_SKIP_DEPENDENCY_INSTALL:-false}
     environment:
       JOB_TRACKER_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/job_tracker
       JOB_TRACKER_REDIS_URL: redis://redis:6379/0
