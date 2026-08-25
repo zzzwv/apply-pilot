@@ -31,6 +31,85 @@ def mock_response(
     )
 
 
+class StaticResponseStream:
+    """A no-network stream that records the pinned connection and HTTP request bytes."""
+
+    def __init__(self) -> None:
+        self._chunks = [b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok", b""]
+        self.request_bytes: list[bytes] = []
+        self.tls_server_names: list[str | None] = []
+
+    async def read(self, _max_bytes: int, timeout: float | None = None) -> bytes:
+        del timeout
+        return self._chunks.pop(0)
+
+    async def write(self, buffer: bytes, timeout: float | None = None) -> None:
+        del timeout
+        self.request_bytes.append(buffer)
+
+    async def aclose(self) -> None:
+        return None
+
+    async def start_tls(
+        self,
+        ssl_context: object,
+        server_hostname: str | None = None,
+        timeout: float | None = None,
+    ) -> "StaticResponseStream":
+        del ssl_context, timeout
+        self.tls_server_names.append(server_hostname)
+        return self
+
+    def get_extra_info(self, name: str) -> object:
+        if name == "server_addr":
+            return (PUBLIC_IP, 443)
+        if name == "is_readable":
+            return False
+        return None
+
+
+class RecordingNetworkBackend:
+    """A network-backend double that has no socket and exposes only pinned TCP targets."""
+
+    def __init__(self) -> None:
+        self.stream = StaticResponseStream()
+        self.tcp_targets: list[tuple[str, int]] = []
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: object = None,
+    ) -> StaticResponseStream:
+        del timeout, local_address, socket_options
+        self.tcp_targets.append((host, port))
+        return self.stream
+
+    async def connect_unix_socket(self, *args: object, **kwargs: object) -> None:
+        raise AssertionError("a pinned web request must not use a Unix socket")
+
+    async def sleep(self, seconds: float) -> None:
+        del seconds
+
+
+@pytest.mark.asyncio
+async def test_default_validator_pins_tcp_to_the_approved_ip_and_keeps_host_and_sni() -> None:
+    """Protects the pre-request path from DNS rebinding before any HTTP bytes are sent."""
+    from app.company_intelligence.links import HttpxLinkValidator
+
+    backend = RecordingNetworkBackend()
+    validator = HttpxLinkValidator(resolver=safe_resolution, network_backend=backend)
+
+    result = await validator.validate("https://www.example.com/careers")
+
+    assert result.status.value == "valid"
+    assert backend.tcp_targets == [(PUBLIC_IP, 443)]
+    assert backend.stream.tls_server_names == ["www.example.com"]
+    assert b"Host: www.example.com" in b"".join(backend.stream.request_bytes)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("status_code", "expected_status"),
@@ -145,11 +224,33 @@ def test_official_domain_resolution_uses_title_name_and_known_official_domain() 
     verification = resolve_official_domain(
         company_name="Acme Corporation",
         candidate=candidate,
-        official_website="https://www.acme.example",
+        official_website="https://acme.example",
     )
 
     assert verification.verified is True
     assert verification.reason == "link domain matches the official website domain"
+
+
+def test_official_domain_resolution_does_not_equate_unrelated_co_uk_hosts() -> None:
+    """Protects official verification from last-two-label collisions on public suffixes."""
+    from app.company_intelligence.schemas import RecruitmentLinkCandidate
+    from app.company_intelligence.verification import resolve_official_domain
+
+    candidate = RecruitmentLinkCandidate(
+        title="Acme Corporation Careers",
+        url="https://jobs.other.co.uk/careers",
+        channel_type="third_party",
+        claimed_official=True,
+    )
+
+    verification = resolve_official_domain(
+        company_name="Acme Corporation",
+        candidate=candidate,
+        official_website="https://www.acme.co.uk",
+    )
+
+    assert verification.verified is False
+    assert verification.reason == "link domain does not match the official website domain"
 
 
 def test_official_domain_resolution_requires_title_and_name_evidence_without_known_site() -> None:
@@ -197,7 +298,7 @@ async def test_candidate_verifier_preserves_source_data_and_explains_its_result(
     verified = await verify_recruitment_link(
         candidate=candidate,
         company_name="Acme Corporation",
-        official_website="https://www.acme.example",
+        official_website="https://acme.example",
         validator=validator,
     )
 

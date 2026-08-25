@@ -2,10 +2,12 @@
 
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from typing import Callable
+from typing import Any, Callable
 from urllib.parse import urljoin, urlsplit
 
+import httpcore
 import httpx
+from httpx._transports.default import AsyncResponseStream, map_httpcore_exceptions
 
 from app.company_intelligence.schemas import RecruitmentLinkCandidate
 from app.company_intelligence.url_safety import (
@@ -47,6 +49,90 @@ class ValidatedLink:
     content: str = ""
 
 
+class _PinnedNetworkBackend(httpcore.AsyncNetworkBackend):
+    """Connect only to the DNS-approved IP while httpcore retains the requested host."""
+
+    def __init__(
+        self,
+        resolution: SafeUrlResolution,
+        network_backend: httpcore.AsyncNetworkBackend | None,
+    ) -> None:
+        from httpcore._backends.auto import AutoBackend
+
+        self._resolution = resolution
+        self._network_backend = network_backend or AutoBackend()
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Any = None,
+    ) -> httpcore.AsyncNetworkStream:
+        if host.casefold().rstrip(".") != self._resolution.hostname.casefold():
+            raise httpcore.ConnectError("connection host does not match safe resolution")
+        return await self._network_backend.connect_tcp(
+            self._resolution.approved_ips[0],
+            port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+
+    async def connect_unix_socket(self, *args: Any, **kwargs: Any) -> httpcore.AsyncNetworkStream:
+        del args, kwargs
+        raise httpcore.ConnectError("pinned URL validation does not use Unix sockets")
+
+    async def sleep(self, seconds: float) -> None:
+        await self._network_backend.sleep(seconds)
+
+
+class PinnedAsyncHTTPTransport(httpx.AsyncBaseTransport):
+    """An HTTPX transport that pins TCP to one safe resolution and keeps host/SNI intact."""
+
+    def __init__(
+        self,
+        resolution: SafeUrlResolution,
+        *,
+        network_backend: httpcore.AsyncNetworkBackend | None = None,
+    ) -> None:
+        self._resolution = resolution
+        self._pool = httpcore.AsyncConnectionPool(
+            max_keepalive_connections=0,
+            network_backend=_PinnedNetworkBackend(resolution, network_backend),
+        )
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if request.url.host.casefold().rstrip(".") != self._resolution.hostname.casefold():
+            raise httpx.UnsupportedProtocol("request host does not match safe resolution")
+
+        core_request = httpcore.Request(
+            method=request.method,
+            url=httpcore.URL(
+                scheme=request.url.raw_scheme,
+                host=request.url.raw_host,
+                port=request.url.port,
+                target=request.url.raw_path,
+            ),
+            headers=request.headers.raw,
+            content=request.stream,
+            extensions=request.extensions,
+        )
+        with map_httpcore_exceptions():
+            core_response = await self._pool.handle_async_request(core_request)
+
+        return httpx.Response(
+            status_code=core_response.status,
+            headers=core_response.headers,
+            stream=AsyncResponseStream(core_response.stream),
+            extensions=core_response.extensions,
+        )
+
+    async def aclose(self) -> None:
+        await self._pool.aclose()
+
+
 class _AnchorParser(HTMLParser):
     """Extract only anchor text and href values; this parser never follows a link."""
 
@@ -84,31 +170,37 @@ class HttpxLinkValidator:
         *,
         transport: httpx.AsyncBaseTransport | None = None,
         resolver: Resolver = resolve_safe_url,
+        network_backend: httpcore.AsyncNetworkBackend | None = None,
         timeout_seconds: float = 5,
         max_redirects: int = 3,
     ) -> None:
         self._transport = transport
         self._resolver = resolver
+        self._network_backend = network_backend
         self._timeout_seconds = timeout_seconds
         self._max_redirects = max_redirects
 
     async def validate(self, url: str) -> ValidatedLink:
         """Fetch a URL with every redirect and connected peer checked before use."""
-        async with httpx.AsyncClient(
-            transport=self._transport,
-            timeout=httpx.Timeout(self._timeout_seconds),
-            follow_redirects=False,
-            trust_env=False,
-        ) as client:
-            current_url = url
-            redirects = 0
-            while True:
-                try:
-                    resolution = self._resolver(current_url)
-                except (UnsafeUrlError, ValueError):
-                    reason = "redirect target is unsafe" if redirects else "URL is unsafe"
-                    return ValidatedLink(LinkStatus.UNKNOWN, None, current_url, reason)
+        current_url = url
+        redirects = 0
+        while True:
+            try:
+                resolution = self._resolver(current_url)
+            except (UnsafeUrlError, ValueError):
+                reason = "redirect target is unsafe" if redirects else "URL is unsafe"
+                return ValidatedLink(LinkStatus.UNKNOWN, None, current_url, reason)
 
+            transport = self._transport or PinnedAsyncHTTPTransport(
+                resolution,
+                network_backend=self._network_backend,
+            )
+            async with httpx.AsyncClient(
+                transport=transport,
+                timeout=httpx.Timeout(self._timeout_seconds),
+                follow_redirects=False,
+                trust_env=False,
+            ) as client:
                 try:
                     response = await client.get(resolution.url)
                 except httpx.TimeoutException:
@@ -134,26 +226,26 @@ class HttpxLinkValidator:
                         "connected peer was not approved",
                     )
 
-                location = response.headers.get("location")
-                if 300 <= response.status_code < 400 and location:
-                    if redirects >= self._max_redirects:
-                        return ValidatedLink(
-                            LinkStatus.UNKNOWN,
-                            response.status_code,
-                            resolution.url,
-                            "too many redirects",
-                        )
-                    current_url = urljoin(resolution.url, location)
-                    redirects += 1
-                    continue
+            location = response.headers.get("location")
+            if 300 <= response.status_code < 400 and location:
+                if redirects >= self._max_redirects:
+                    return ValidatedLink(
+                        LinkStatus.UNKNOWN,
+                        response.status_code,
+                        resolution.url,
+                        "too many redirects",
+                    )
+                current_url = urljoin(resolution.url, location)
+                redirects += 1
+                continue
 
-                return ValidatedLink(
-                    _status_for_http_code(response.status_code),
-                    response.status_code,
-                    resolution.url,
-                    _reason_for_http_code(response.status_code),
-                    response.text,
-                )
+            return ValidatedLink(
+                _status_for_http_code(response.status_code),
+                response.status_code,
+                resolution.url,
+                _reason_for_http_code(response.status_code),
+                response.text,
+            )
 
 
 def _connected_peer(response: httpx.Response) -> str:

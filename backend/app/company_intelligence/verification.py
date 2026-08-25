@@ -41,20 +41,12 @@ def resolve_official_domain(
 
     candidate_host = urlsplit(candidate.url).hostname
     official_host = urlsplit(official_website).hostname
-    domains_match = (
-        candidate_host is not None
-        and official_host is not None
-        and _base_domain(candidate_host) == _base_domain(official_host)
+    domains_match = candidate_host is not None and official_host is not None and (
+        candidate_host == official_host or candidate_host.endswith(f".{official_host}")
     )
     if domains_match:
         return DomainVerification(True, "link domain matches the official website domain")
     return DomainVerification(False, "link domain does not match the official website domain")
-
-
-def _base_domain(hostname: str) -> str:
-    """Compare stable company-domain suffixes without adding a public-suffix dependency."""
-    labels = hostname.casefold().rstrip(".").split(".")
-    return ".".join(labels[-2:])
 
 
 async def verify_recruitment_link(
