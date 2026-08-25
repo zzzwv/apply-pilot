@@ -37,6 +37,7 @@ class CompanyService:
     ) -> CompanyIntelligenceConfirmResponse:
         """Persist only explicitly selected candidate data, without trusting verification claims."""
         company = await self.companies.find_by_name_or_alias(payload.company.company_name)
+        await self._ensure_aliases_are_unclaimed(company, payload.aliases)
         created = company is None
         if company is None:
             company = Company(
@@ -107,3 +108,23 @@ class CompanyService:
                 )
             )
             known_urls.add(candidate.url)
+
+    async def _ensure_aliases_are_unclaimed(
+        self, company: Company | None, aliases: list[str]
+    ) -> None:
+        for alias in aliases:
+            owner = await self.companies.find_by_name_or_alias(normalize_company_name(alias))
+            if owner is not None and not self._is_same_company(owner, company):
+                raise AppError(
+                    ErrorCode.COMPANY_AMBIGUOUS,
+                    "Alias belongs to another company",
+                    status_code=409,
+                )
+
+    @staticmethod
+    def _is_same_company(first: Company, second: Company | None) -> bool:
+        if second is None:
+            return False
+        if first is second:
+            return True
+        return first.id is not None and second.id is not None and first.id == second.id

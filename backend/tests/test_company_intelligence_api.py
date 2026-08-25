@@ -340,3 +340,56 @@ async def test_confirmation_deduplicates_existing_data_without_overwriting_confl
         "https://jobs.acme.example/social",
     ]
     assert existing.recruitment_links[-1].verification_status is VerificationStatus.UNVERIFIED
+
+
+@pytest.mark.asyncio
+async def test_confirmation_rejects_alias_owned_by_another_company(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Breaks if confirming NewCo can claim an alias already resolved to ExistingCo."""
+    from app.core.errors import AppError
+    from app.schemas.company import CompanyIntelligenceConfirmRequest
+    from app.services import company_service
+
+    existing = Company(id=uuid.uuid4(), full_name="ExistingCo")
+
+    class MemorySession:
+        def __init__(self) -> None:
+            self.added: list[Company] = []
+            self.commits = 0
+
+        def add(self, company: Company) -> None:
+            if company.id is None:
+                company.id = uuid.uuid4()
+            self.added.append(company)
+
+        async def commit(self) -> None:
+            self.commits += 1
+
+        async def refresh(self, _: object) -> None:
+            return None
+
+    class AliasOwnershipRepository:
+        def __init__(self, session: MemorySession) -> None:
+            self.session = session
+
+        async def find_by_name_or_alias(self, name: str) -> Company | None:
+            return existing if name == "existingco" else None
+
+        def add(self, company: Company) -> Company:
+            self.session.add(company)
+            return company
+
+    monkeypatch.setattr(company_service, "CompanyRepository", AliasOwnershipRepository)
+    session = MemorySession()
+    request = CompanyIntelligenceConfirmRequest(
+        company=_candidate(company_name="NewCo"),
+        aliases=["ExistingCo"],
+    )
+
+    with pytest.raises(AppError) as error:
+        await company_service.CompanyService(session).confirm(request)
+
+    assert error.value.status_code == 409
+    assert session.added == []
+    assert session.commits == 0
