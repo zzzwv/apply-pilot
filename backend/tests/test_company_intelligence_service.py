@@ -161,6 +161,29 @@ class StallingCache:
         del normalized_name, result
 
 
+class CancellationResistantLockCache(StallingCache):
+    def __init__(self) -> None:
+        self.released_tokens: list[str] = []
+        self.released = asyncio.Event()
+
+    async def get(self, normalized_name: str):
+        del normalized_name
+        return None
+
+    async def acquire_lock(self, normalized_name: str) -> str:
+        del normalized_name
+        try:
+            await asyncio.sleep(0.05)
+        except asyncio.CancelledError:
+            await asyncio.sleep(0)
+        return "late-lock-token"
+
+    async def release_lock(self, normalized_name: str, token: str) -> None:
+        del normalized_name
+        self.released_tokens.append(token)
+        self.released.set()
+
+
 class AtomicRateRedis:
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[object, ...]]] = []
@@ -452,6 +475,30 @@ async def test_cache_stage_cannot_extend_the_overall_deadline() -> None:
     assert monotonic() - started < 0.04
     assert result.company is None
     assert result.warnings == ["company intelligence search timed out"]
+    assert provider.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_late_cancellation_resistant_lock_is_released_after_deadline() -> None:
+    """Protects Redis from an orphaned lock when acquisition ignores cancellation briefly."""
+    provider = StaticProvider(candidate())
+    cache = CancellationResistantLockCache()
+    intelligence = service(
+        LocalRepository(),
+        [provider],
+        cache=cache,
+        overall_timeout_seconds=0.01,
+    )
+
+    result = await intelligence.search_company(
+        CompanyIntelligenceSearchRequest(company_name="Late Lock Corporation"),
+        actor_id="late-lock-user",
+    )
+    await asyncio.wait_for(cache.released.wait(), timeout=0.1)
+
+    assert result.company is None
+    assert result.warnings == ["company intelligence search timed out"]
+    assert cache.released_tokens == ["late-lock-token"]
     assert provider.calls == 0
 
 

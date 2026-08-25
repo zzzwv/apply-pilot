@@ -91,9 +91,7 @@ class CompanyIntelligenceService:
             )
 
         try:
-            lock_token = await self._within_budget(
-                lambda: self.cache.acquire_lock(name), started_at
-            )
+            lock_token = await self._acquire_lock_with_budget(name, started_at)
         except asyncio.TimeoutError:
             return self._partial("company intelligence search timed out")
         if lock_token is None:
@@ -347,6 +345,38 @@ class CompanyIntelligenceService:
         if remaining <= 0:
             return
         await asyncio.wait(pending, timeout=remaining)
+
+    async def _acquire_lock_with_budget(self, name: str, started_at: float) -> str | None:
+        remaining = self._remaining(started_at)
+        if remaining <= 0:
+            raise asyncio.TimeoutError
+        task = asyncio.create_task(self.cache.acquire_lock(name))
+        try:
+            done, _ = await asyncio.wait({task}, timeout=remaining)
+        except BaseException:
+            task.cancel()
+            self._release_late_lock(name, task)
+            raise
+        if task in done:
+            return task.result()
+        task.cancel()
+        self._release_late_lock(name, task)
+        raise asyncio.TimeoutError
+
+    def _release_late_lock(self, name: str, task: asyncio.Task[str | None]) -> None:
+        def release_if_acquired(done: asyncio.Task[str | None]) -> None:
+            if done.cancelled():
+                return
+            try:
+                token = done.result()
+            except Exception:
+                return
+            if token is not None:
+                cleanup = asyncio.create_task(self.cache.release_lock(name, token))
+                self._drain(cleanup)
+
+        task.add_done_callback(release_if_acquired)
+        self._drain(task)
 
     async def _release_lock_with_budget(
         self, name: str, token: str, started_at: float
