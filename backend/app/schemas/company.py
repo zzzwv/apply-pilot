@@ -1,7 +1,10 @@
 from datetime import date
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.company_intelligence.normalization import normalize_company_name
+from app.company_intelligence.schemas import CompanyCandidate, RecruitmentLinkCandidate
 
 
 class CompanyCreate(BaseModel):
@@ -24,3 +27,42 @@ class CompanyRead(BaseModel):
     full_name: str
 
     model_config = {"from_attributes": True}
+
+
+class CompanyIntelligenceConfirmRequest(BaseModel):
+    """User-edited candidate data that may be persisted only after explicit confirmation."""
+
+    company: CompanyCandidate
+    aliases: list[str] = Field(default_factory=list, max_length=50)
+    selected_recruitment_links: list[RecruitmentLinkCandidate] = Field(
+        default_factory=list, max_length=50
+    )
+
+    model_config = {"extra": "forbid"}
+
+    @classmethod
+    def _normalize_alias(cls, value: str) -> str:
+        normalized = normalize_company_name(value)
+        if not normalized:
+            raise ValueError("alias must not be empty")
+        return normalized
+
+    @classmethod
+    def _validate_aliases(cls, values: list[str]) -> list[str]:
+        return [cls._normalize_alias(value) for value in values]
+
+    _normalize_aliases = field_validator("aliases")(_validate_aliases)
+
+
+class ConfirmedRecruitmentLinkRead(BaseModel):
+    url: str
+    title: str
+    channel_type: str
+    claimed_official: bool
+
+
+class CompanyIntelligenceConfirmResponse(BaseModel):
+    company: CompanyRead
+    created: bool
+    aliases: list[str]
+    recruitment_links: list[ConfirmedRecruitmentLinkRead]
