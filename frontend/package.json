@@ -15,6 +15,8 @@
     "antd": "^5.0.0",
     "axios": "^1.0.0",
     "echarts": "^5.0.0",
+    "fake-indexeddb": "^6.2.5",
+    "idb": "^8.0.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.0.0",
