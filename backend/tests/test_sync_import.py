@@ -139,3 +139,52 @@ def test_import_requires_jwt_and_enforces_batch_limit(client: TestClient) -> Non
     )
 
     assert response.status_code == 422
+
+
+def test_client_sync_id_is_idempotent_per_user_not_global(client: TestClient) -> None:
+    shared_sync_id = str(uuid4())
+    user_a = _register_and_headers(client)
+    user_b = _register_and_headers(client)
+
+    imported_a = client.post(
+        "/api/v1/sync/import-applications",
+        headers=user_a,
+        json={"applications": [_item(shared_sync_id)]},
+    )
+    imported_b = client.post(
+        "/api/v1/sync/import-applications",
+        headers=user_b,
+        json={"applications": [_item(shared_sync_id)]},
+    )
+    reused_a = client.post(
+        "/api/v1/sync/import-applications",
+        headers=user_a,
+        json={"applications": [_item(shared_sync_id)]},
+    )
+
+    assert imported_a.json()["data"]["imported"] == 1
+    assert imported_b.json()["data"]["imported"] == 1
+    assert reused_a.json()["data"]["reused"] == 1
+    assert client.get("/api/v1/applications", headers=user_a).json()["data"]["total"] == 1
+    assert client.get("/api/v1/applications", headers=user_b).json()["data"]["total"] == 1
+
+
+def test_second_authenticated_session_sees_refetched_cloud_data(client: TestClient) -> None:
+    first_session = _register_and_headers(client)
+    current_user = client.get("/api/v1/auth/me", headers=first_session).json()["data"]
+    second_login = client.post(
+        "/api/v1/auth/login",
+        json={"username_or_email": current_user["username"], "password": "password-123"},
+    )
+    second_session = {"Authorization": f"Bearer {second_login.json()['data']['access_token']}"}
+
+    created = client.post(
+        "/api/v1/sync/import-applications",
+        headers=first_session,
+        json={"applications": [_item(str(uuid4()))]},
+    )
+    refetched = client.get("/api/v1/applications", headers=second_session)
+
+    assert created.status_code == 200
+    assert refetched.status_code == 200
+    assert refetched.json()["data"]["total"] == 1
