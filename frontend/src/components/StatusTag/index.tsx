@@ -33,5 +33,5 @@ export function getStatusVisual(status: ApplicationStatus): StatusVisual {
 export function StatusTag({ status }: { status: ApplicationStatus }) {
   const visual = getStatusVisual(status);
 
-  return <Tag color={visual.color} className={`status-tag status-tag--${visual.category}`}>{statusLabels[status]}</Tag>;
+  return <Tag className={`status-tag status-tag--${visual.category}`}>{statusLabels[status]}</Tag>;
 }

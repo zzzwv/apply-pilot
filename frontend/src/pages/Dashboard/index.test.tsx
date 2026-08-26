@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -31,6 +31,30 @@ afterEach(async () => {
 });
 
 describe("Guest dashboard filters", () => {
+  it("gives every dashboard filter a programmatic name and scopes the empty-state create action", async () => {
+    useAuthStore.setState({ user: undefined, initialized: true });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/"]}>
+          <DashboardPage />
+          <CurrentLocation />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByLabelText("关键词")).toBeDefined();
+    for (const label of ["投递状态", "企业性质", "投递类型", "行业", "企业规模"]) {
+      expect(await screen.findByRole("combobox", { name: label })).toBeDefined();
+    }
+    expect(screen.getAllByLabelText("投递日期").length).toBeGreaterThan(0);
+    const emptyState = (await screen.findByRole("heading", { name: "还没有投递记录" })).closest<HTMLElement>(".empty-state");
+    fireEvent.click(within(emptyState!).getByRole("button", { name: "新增投递" }));
+
+    expect(screen.getByTestId("current-location").textContent).toContain('"openCreate":true');
+  });
+
   it("opens the real application creation flow from the empty dashboard", async () => {
     useAuthStore.setState({ user: undefined, initialized: true });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

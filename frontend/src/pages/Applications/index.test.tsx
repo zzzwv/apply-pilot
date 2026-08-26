@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -53,6 +53,43 @@ afterEach(async () => {
 });
 
 describe("ApplicationsPage guest workflow", () => {
+  it("shows an initial loading skeleton instead of an actionable empty state", () => {
+    useAuthStore.setState({ user: undefined, initialized: true });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const list = vi.spyOn(LocalApplicationDataSource.prototype, "list").mockImplementation(() => new Promise(() => {}));
+
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <ApplicationsPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(container.querySelector(".ant-skeleton")).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "正在加载投递记录" })).toBeNull();
+    list.mockRestore();
+  });
+
+  it("gives every applications filter a programmatic name", async () => {
+    useAuthStore.setState({ user: undefined, initialized: true });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <ApplicationsPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByLabelText("关键词")).toBeDefined();
+    for (const label of ["投递状态", "企业性质", "投递类型", "行业", "企业规模", "排序"]) {
+      expect(await screen.findByRole("combobox", { name: label })).toBeDefined();
+    }
+    expect(screen.getAllByLabelText("投递日期").length).toBeGreaterThan(0);
+  });
+
   it("opens the shared create drawer when the applications route receives openCreate state", async () => {
     useAuthStore.setState({ user: undefined, initialized: true });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -83,8 +120,8 @@ describe("ApplicationsPage guest workflow", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByRole("heading", { name: "还没有投递记录" })).toBeDefined();
-    fireEvent.click(container.querySelector(".empty-state button")!);
+    const emptyState = (await screen.findByRole("heading", { name: "还没有投递记录" })).closest<HTMLElement>(".empty-state");
+    fireEvent.click(within(emptyState!).getByRole("button", { name: "新增投递" }));
 
     expect(await screen.findByText("新增投递", { selector: ".ant-drawer-title" })).toBeDefined();
   });

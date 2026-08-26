@@ -17,7 +17,7 @@ export function AppHeader({ queryClient }: Props) {
           <img src={logo} alt="ApplyPilot" />
           <span>
             <strong>ApplyPilot</strong>
-            <h1>秋招 / 实习投递管理</h1>
+            <p>秋招 / 实习投递管理</p>
           </span>
         </Link>
         <nav className="applypilot-header__nav" aria-label="主导航">

@@ -73,7 +73,7 @@ textarea {
   font-size: 16px;
 }
 
-.applypilot-header__brand h1 {
+.applypilot-header__brand p {
   margin: 0;
   color: var(--ap-text-secondary);
   font-size: 12px;
@@ -141,6 +141,36 @@ textarea {
 .status-tag {
   border-radius: 999px;
   font-weight: 600;
+}
+
+.status-tag--neutral {
+  border-color: #d1d5db;
+  color: #374151;
+  background: #f3f4f6;
+}
+
+.status-tag--progress {
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.status-tag--success {
+  border-color: #bbf7d0;
+  color: #166534;
+  background: #ecfdf3;
+}
+
+.status-tag--warning {
+  border-color: #fde68a;
+  color: #92400e;
+  background: #fffbeb;
+}
+
+.status-tag--danger {
+  border-color: #fecaca;
+  color: #b91c1c;
+  background: #fef2f2;
 }
 
 .empty-state {
@@ -675,7 +705,7 @@ textarea {
     padding: var(--ap-space-3) 0;
   }
 
-  .applypilot-header__brand h1 {
+  .applypilot-header__brand p {
     display: none;
   }
 

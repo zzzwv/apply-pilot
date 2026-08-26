@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Button, Card, DatePicker, Input, Popconfirm, Select, Space, Table, message } from "antd";
+import { Alert, Button, Card, DatePicker, Input, Popconfirm, Select, Skeleton, Space, Table, message } from "antd";
 import dayjs from "dayjs";
 import { Link, useLocation } from "react-router-dom";
 
@@ -180,23 +180,23 @@ export function ApplicationsPage() {
             <label htmlFor="applications-keyword">关键词</label>
             <Input id="applications-keyword" allowClear placeholder="搜索公司、岗位、行业、企业性质或备注" value={keywordInput} onChange={(event) => setKeywordInput(event.target.value)} />
           </div>
-          <div className="applications-filter-field"><span>投递状态</span><Select allowClear mode="multiple" placeholder="投递状态" options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))} value={params.status} onChange={(value: ApplicationStatus[]) => updateFilters({ status: value.length ? value : undefined })} /></div>
-          <div className="applications-filter-field"><span>企业性质</span><Select allowClear mode="multiple" placeholder="企业性质" options={natureOptions.map(([value, label]) => ({ value, label }))} value={params.company_nature} onChange={(value: string[]) => updateFilters({ company_nature: value.length ? value : undefined })} /></div>
-          <div className="applications-filter-field"><span>投递类型</span><Select allowClear mode="multiple" placeholder="投递类型" options={Object.entries(applicationTypeLabels).map(([value, label]) => ({ value, label }))} value={params.application_type} onChange={(value: ApplicationType[]) => updateFilters({ application_type: value.length ? value : undefined })} /></div>
-          <div className="applications-filter-field"><span>行业</span><Select allowClear mode="tags" placeholder="行业" value={params.industry} onChange={(value: string[]) => updateFilters({ industry: value.length ? value : undefined })} /></div>
-          <div className="applications-filter-field"><span>企业规模</span><Select allowClear mode="multiple" placeholder="企业规模" options={sizeOptions.map((value) => ({ value, label: value }))} value={params.company_size} onChange={(value: string[]) => updateFilters({ company_size: value.length ? value : undefined })} /></div>
-          <div className="applications-filter-field"><span>投递日期</span><DatePicker.RangePicker value={params.date_from && params.date_to ? [dayjs(params.date_from), dayjs(params.date_to)] : undefined} onChange={(value) => updateFilters({ date_from: value?.[0]?.format("YYYY-MM-DD"), date_to: value?.[1]?.format("YYYY-MM-DD") })} /></div>
+          <div className="applications-filter-field"><label htmlFor="applications-status">投递状态</label><Select id="applications-status" aria-label="投递状态" allowClear mode="multiple" placeholder="投递状态" options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))} value={params.status} onChange={(value: ApplicationStatus[]) => updateFilters({ status: value.length ? value : undefined })} /></div>
+          <div className="applications-filter-field"><label htmlFor="applications-company-nature">企业性质</label><Select id="applications-company-nature" aria-label="企业性质" allowClear mode="multiple" placeholder="企业性质" options={natureOptions.map(([value, label]) => ({ value, label }))} value={params.company_nature} onChange={(value: string[]) => updateFilters({ company_nature: value.length ? value : undefined })} /></div>
+          <div className="applications-filter-field"><label htmlFor="applications-application-type">投递类型</label><Select id="applications-application-type" aria-label="投递类型" allowClear mode="multiple" placeholder="投递类型" options={Object.entries(applicationTypeLabels).map(([value, label]) => ({ value, label }))} value={params.application_type} onChange={(value: ApplicationType[]) => updateFilters({ application_type: value.length ? value : undefined })} /></div>
+          <div className="applications-filter-field"><label htmlFor="applications-industry">行业</label><Select id="applications-industry" aria-label="行业" allowClear mode="tags" placeholder="行业" value={params.industry} onChange={(value: string[]) => updateFilters({ industry: value.length ? value : undefined })} /></div>
+          <div className="applications-filter-field"><label htmlFor="applications-company-size">企业规模</label><Select id="applications-company-size" aria-label="企业规模" allowClear mode="multiple" placeholder="企业规模" options={sizeOptions.map((value) => ({ value, label: value }))} value={params.company_size} onChange={(value: string[]) => updateFilters({ company_size: value.length ? value : undefined })} /></div>
+          <div className="applications-filter-field"><label htmlFor="applications-date-range-start">投递日期</label><DatePicker.RangePicker id={{ start: "applications-date-range-start", end: "applications-date-range-end" }} aria-label="投递日期" value={params.date_from && params.date_to ? [dayjs(params.date_from), dayjs(params.date_to)] : undefined} onChange={(value) => updateFilters({ date_from: value?.[0]?.format("YYYY-MM-DD"), date_to: value?.[1]?.format("YYYY-MM-DD") })} /></div>
           <div className="applications-filter-field applications-filter-field--quick-actions"><span>快捷日期</span><Space wrap><Button onClick={() => updateFilters({ date_from: dayjs().subtract(6, "day").format("YYYY-MM-DD"), date_to: dayjs().format("YYYY-MM-DD") })}>近7天</Button><Button onClick={() => updateFilters({ date_from: dayjs().subtract(29, "day").format("YYYY-MM-DD"), date_to: dayjs().format("YYYY-MM-DD") })}>近30天</Button></Space></div>
           <div className="applications-filter-field"><label htmlFor="applications-sort">排序</label><Select id="applications-sort" aria-label="排序" options={sortOptions} value={params.sort} onChange={(value: ApplicationSort) => updateFilters({ sort: value })} /></div>
           {hasActiveFilters && <div className="applications-filter-field applications-filter-field--action"><span>筛选操作</span><Button onClick={clearFilters}>清空筛选</Button></div>}
         </div>
       </Card>
-      {items.length === 0 ? (
+      {applications.isLoading && !applications.data ? <Skeleton active /> : items.length === 0 ? (
         <EmptyState
           image={{ src: emptyApplications, alt: hasActiveFilters ? "没有匹配的投递记录" : "还没有投递记录" }}
           title={applications.isLoading ? "正在加载投递记录" : hasActiveFilters ? "暂无匹配投递记录" : "还没有投递记录"}
           description={applications.isLoading ? "请稍候，正在获取你的投递记录。" : hasActiveFilters ? "试试调整筛选条件，或清空筛选查看全部记录。" : "从第一条投递记录开始，持续掌握求职进度。"}
-          action={<Button type={hasActiveFilters ? "default" : "primary"} onClick={hasActiveFilters ? clearFilters : openCreateDrawer}>{hasActiveFilters ? "清空筛选" : "开始新增投递"}</Button>}
+          action={<Button type={hasActiveFilters ? "default" : "primary"} onClick={hasActiveFilters ? clearFilters : openCreateDrawer}>{hasActiveFilters ? "清空筛选" : "新增投递"}</Button>}
         />
       ) : (
         <Table<Application>

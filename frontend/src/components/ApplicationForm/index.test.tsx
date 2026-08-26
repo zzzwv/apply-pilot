@@ -25,7 +25,9 @@ describe("ApplicationForm", () => {
   it("keeps the company intelligence field in the shared cloud form", () => {
     render(<ApplicationForm open saving={false} onClose={vi.fn()} onSubmit={vi.fn()} />);
 
-    expect(screen.getByRole("heading", { name: "企业信息" })).toBeDefined();
+    for (const heading of ["基本信息", "企业信息", "投递信息", "补充信息"]) {
+      expect(screen.getByRole("heading", { name: heading })).toBeDefined();
+    }
     expect(screen.getByRole("region", { name: "企业智能信息" })).toBeDefined();
   });
 });

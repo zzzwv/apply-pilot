@@ -30,7 +30,7 @@ vi.mock("./api/auth", () => ({
 }));
 
 vi.mock("./pages/Dashboard", () => ({
-  DashboardPage: () => <><h2>求职投递数据看板</h2><span>总投递</span><button>刷新数据</button></>,
+  DashboardPage: () => <><h1>求职投递数据看板</h1><span>总投递</span><button>刷新数据</button></>,
 }));
 
 afterEach(cleanup);
@@ -44,7 +44,8 @@ describe("App", () => {
 
   it("renders the Phase 1 application shell", () => {
     render(<BrowserRouter><App /></BrowserRouter>);
-    expect(screen.getByRole("heading", { name: "秋招 / 实习投递管理" })).toBeDefined();
+    expect(screen.getByText("秋招 / 实习投递管理").tagName).not.toBe("H1");
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   });
 
   it("renders the Phase 2 application list entry point", () => {

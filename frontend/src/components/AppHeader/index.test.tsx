@@ -36,5 +36,6 @@ describe("AppHeader", () => {
 
     expect(screen.getByRole("img", { name: "ApplyPilot" })).toBeDefined();
     expect(screen.getByRole("navigation", { name: "主导航" })).toBeDefined();
+    expect(screen.getByText("秋招 / 实习投递管理").tagName).not.toBe("H1");
   });
 });

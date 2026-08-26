@@ -16,9 +16,14 @@ describe("StatusTag", () => {
     });
   });
 
-  it("keeps the status label while exposing its visual category", () => {
-    render(<StatusTag status="OFFER_RECEIVED" />);
+  it("renders each exact status label with an accessible semantic treatment", () => {
+    Object.entries(statusLabels).forEach(([status, label]) => {
+      const { unmount } = render(<StatusTag status={status as keyof typeof statusLabels} />);
+      expect(screen.getByText(label).className).toContain(`status-tag--${getStatusVisual(status as keyof typeof statusLabels).category}`);
+      unmount();
+    });
 
-    expect(screen.getByText("已获 Offer").className).toContain("status-tag--success");
+    render(<StatusTag status="OFFER_RECEIVED" />);
+    expect(screen.getByText("已获 Offer").className).not.toContain("ant-tag-has-color");
   });
 });
