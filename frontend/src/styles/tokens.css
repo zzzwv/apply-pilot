@@ -1,0 +1,30 @@
+:root {
+  --ap-primary: #4F6EF7;
+  --ap-primary-hover: #435FE0;
+  --ap-secondary: #7C5CFC;
+  --ap-page-bg: #F6F8FC;
+  --ap-surface: #FFFFFF;
+  --ap-text: #1F2937;
+  --ap-text-secondary: #6B7280;
+  --ap-text-muted: #9CA3AF;
+  --ap-border: #E8ECF4;
+
+  --ap-status-success: #22C55E;
+  --ap-status-warning: #F59E0B;
+  --ap-status-error: #EF4444;
+  --ap-status-info: #3B82F6;
+
+  --ap-space-1: 4px;
+  --ap-space-2: 8px;
+  --ap-space-3: 12px;
+  --ap-space-4: 16px;
+  --ap-space-5: 20px;
+  --ap-space-6: 24px;
+  --ap-space-8: 32px;
+
+  --ap-radius-md: 12px;
+  --ap-radius-lg: 16px;
+  --ap-shadow-sm: 0 6px 18px rgb(31 41 55 / 8%);
+  --ap-focus-ring: 0 0 0 3px rgb(79 110 247 / 30%);
+  --ap-motion-fast: 160ms ease;
+}

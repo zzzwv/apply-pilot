@@ -36,6 +36,12 @@ vi.mock("./pages/Dashboard", () => ({
 afterEach(cleanup);
 
 describe("App", () => {
+  it("marks the outer visual shell as the ApplyPilot app", () => {
+    render(<BrowserRouter><App /></BrowserRouter>);
+
+    expect(screen.getByTestId("app-shell").classList.contains("applypilot-app")).toBe(true);
+  });
+
   it("renders the Phase 1 application shell", () => {
     render(<BrowserRouter><App /></BrowserRouter>);
     expect(screen.getByRole("heading", { name: "秋招 / 实习投递管理" })).toBeDefined();
