@@ -51,5 +51,8 @@ describe("AuthControls", () => {
 
     expect(screen.getByText("继续你的求职进程")).toBeDefined();
     expect(screen.getByText("查看最新投递动态和数据。")).toBeDefined();
+    const artwork = document.querySelector(".auth-controls__intro img");
+    expect(artwork?.getAttribute("alt")).toBe("");
+    expect(artwork?.getAttribute("aria-hidden")).toBe("true");
   });
 });

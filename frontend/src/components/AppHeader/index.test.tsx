@@ -35,5 +35,6 @@ describe("AppHeader", () => {
     );
 
     expect(screen.getByRole("img", { name: "ApplyPilot" })).toBeDefined();
+    expect(screen.getByRole("navigation", { name: "主导航" })).toBeDefined();
   });
 });
