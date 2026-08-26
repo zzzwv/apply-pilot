@@ -377,6 +377,8 @@ async def test_web_search_returns_search_evidence(caplog: pytest.LogCaptureFixtu
     assert result.sources[0].url_id == "U1"
     assert all("response_format" not in payload for payload in payloads)
     assert all(payload["tools"][0]["function"]["name"] == "$web_search" for payload in payloads)
+    assert "recruitment" in payloads[0]["messages"][0]["content"].casefold()
+    assert "recruitment" in payloads[0]["messages"][1]["content"].casefold()
     assert payloads[1]["messages"][-2]["role"] == "assistant"
     assert payloads[1]["messages"][-1] == {
         "role": "tool",
@@ -429,6 +431,117 @@ async def test_canonical_extraction_valid(caplog: pytest.LogCaptureFixture) -> N
     assert payload["response_format"]["type"] == "json_schema"
     assert "tools" not in payload
     assert any("KIMI_EXTRACTION_COMPLETED" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_canonical_extraction_normalizes_observed_legacy_recruitment_fields() -> None:
+    """Keep evidence-backed links when Kimi uses its legacy per-link field names."""
+
+    from app.company_intelligence.kimi_two_stage import KimiCanonicalExtractor
+    from app.core.config import Settings
+
+    legacy_payload = extraction_payload(
+        recruitment_links=[
+            {"url_id": "U2", "type": "official_campus", "source_ids": ["S2"]},
+            {
+                "url_id": "U3",
+                "link_type": "official",
+                "source_ids": ["S3"],
+                "url": "https://model-invented.example/jobs",
+            },
+        ]
+    )
+    legacy_payload.pop("industry")
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": json.dumps(legacy_payload)},
+                    }
+                ]
+            },
+        )
+
+    extractor = KimiCanonicalExtractor(
+        Settings(
+            jwt_secret_key="test-only-jwt-secret-at-least-32-bytes",
+            kimi_api_key="test-kimi-api-key",
+        ),
+        transport=httpx.MockTransport(handler),
+        retry_delay_seconds=0,
+    )
+
+    result = await extractor.extract(evidence(), deadline=monotonic() + 10)
+
+    assert result.industry is None
+    links = [
+        (link.url_id, link.channel_type, link.claimed_official)
+        for link in result.recruitment_links
+    ]
+    assert links == [
+        ("U2", "official_campus", False),
+        ("U3", "other", True),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_canonical_extraction_keeps_only_evidence_backed_legacy_links_from_fenced_json(
+) -> None:
+    """Kimi's non-canonical links must resolve through Stage A, never its raw URL text."""
+
+    from app.company_intelligence.kimi_two_stage import KimiCanonicalExtractor
+    from app.core.config import Settings
+
+    legacy_payload = extraction_payload(
+        recruitment_links=[
+            {"type": "official_campus", "source_ids": ["S2"]},
+            {
+                "link_type": "official",
+                "url": "https://evidence3.acme.example/company",
+            },
+            {"url": "https://model-invented.example/jobs", "type": "official_social"},
+        ]
+    )
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": f"```json\n{json.dumps(legacy_payload)}\n```",
+                        },
+                    }
+                ]
+            },
+        )
+
+    extractor = KimiCanonicalExtractor(
+        Settings(
+            jwt_secret_key="test-only-jwt-secret-at-least-32-bytes",
+            kimi_api_key="test-kimi-api-key",
+        ),
+        transport=httpx.MockTransport(handler),
+        retry_delay_seconds=0,
+    )
+
+    result = await extractor.extract(evidence(), deadline=monotonic() + 10)
+
+    links = [
+        (link.url_id, link.channel_type, link.claimed_official)
+        for link in result.recruitment_links
+    ]
+    assert links == [
+        ("U2", "official_campus", False),
+        ("U3", "other", True),
+    ]
 
 
 @pytest.mark.asyncio

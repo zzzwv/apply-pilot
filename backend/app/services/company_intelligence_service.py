@@ -8,7 +8,7 @@ from typing import Any
 
 from app.company_intelligence.cache import CompanyIntelligenceCache
 from app.company_intelligence.kimi_two_stage import KimiTwoStageCompanyProvider
-from app.company_intelligence.links import HttpxLinkValidator, discover_recruitment_links
+from app.company_intelligence.links import HttpxLinkValidator
 from app.company_intelligence.providers import (
     CompanySearchProvider,
     ProviderError,
@@ -213,19 +213,6 @@ class CompanyIntelligenceService:
             return candidate, []
         links = list(candidate.recruitment_links)
         warnings: list[str] = []
-        if candidate.official_website is not None:
-            try:
-                discovered = await self._within_budget(
-                    lambda: discover_recruitment_links(
-                        homepage_url=candidate.official_website,
-                        company_name=candidate.company_name,
-                        validator=self.link_validator,
-                    ),
-                    started_at,
-                )
-                links.extend(discovered)
-            except Exception:
-                warnings.append("recruitment link discovery was incomplete")
 
         unique = {link.url: link for link in links}
         tasks = [

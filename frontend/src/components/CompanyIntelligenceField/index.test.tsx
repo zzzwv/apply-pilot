@@ -114,6 +114,21 @@ describe("CompanyIntelligenceField", () => {
     expect(screen.getByRole("link", { name: "腾讯关于我们" }).getAttribute("href")).toBe("https://www.tencent.com/about");
   });
 
+  it("reports the next selected recruitment link for the application channel", async () => {
+    vi.mocked(searchLocalCompanies).mockResolvedValue([]);
+    vi.mocked(searchCompanyIntelligence).mockResolvedValue({ company: candidate, recruitment_links: candidate.recruitment_links, sources: candidate.sources, partial: false, warnings: [], allow_manual_input: true });
+    const onRecruitmentLinkChange = vi.fn();
+    render(<CompanyIntelligenceField value={undefined} onChange={vi.fn()} onRecruitmentLinkChange={onRecruitmentLinkChange} />);
+
+    fireEvent.change(screen.getByLabelText("企业名称"), { target: { value: "腾讯" } });
+    fireEvent.click(screen.getByRole("button", { name: "联网获取" }));
+
+    await screen.findByLabelText("企业全称");
+    expect(onRecruitmentLinkChange).toHaveBeenLastCalledWith("https://join.qq.com");
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择校招官网" }));
+    expect(onRecruitmentLinkChange).toHaveBeenLastCalledWith("https://jobs.example.com/tencent");
+  });
+
   it("allows a long-running web search to be cancelled while retaining manual entry", async () => {
     vi.mocked(searchLocalCompanies).mockResolvedValue([]);
     let resolveSearch: ((value: CompanyIntelligenceSearchResult) => void) | undefined;

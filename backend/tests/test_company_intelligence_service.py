@@ -10,6 +10,7 @@ from app.company_intelligence.schemas import (
     CandidateSource,
     CompanyCandidate,
     CompanyIntelligenceSearchRequest,
+    RecruitmentLinkCandidate,
 )
 
 
@@ -159,6 +160,18 @@ class NoNetworkValidator:
         return ValidatedLink(LinkStatus.UNKNOWN, None, "https://www.acme.example", "not fetched")
 
 
+class TrackingValidator:
+    def __init__(self) -> None:
+        self.validated_urls: list[str] = []
+
+    async def validate(self, url: str):
+        from app.company_intelligence.links import ValidatedLink
+        from app.models.enums import LinkStatus
+
+        self.validated_urls.append(url)
+        return ValidatedLink(LinkStatus.VALID, 200, url, "HTTP response is reachable")
+
+
 class ScalarResult:
     def __init__(self, first: object | None, all_values: list[object]) -> None:
         self._first = first
@@ -247,6 +260,7 @@ def service(
     rate_limit: int = 10,
     overall_timeout_seconds: float = 10,
     provider_safety_reserve_seconds: float = 0.75,
+    link_validator=None,
 ):
     from app.company_intelligence.cache import CompanyIntelligenceCache
     from app.services.company_intelligence_service import CompanyIntelligenceService
@@ -261,7 +275,7 @@ def service(
             rate_limit_max_requests=rate_limit,
             rate_limit_window_seconds=60,
         ),
-        link_validator=NoNetworkValidator(),
+        link_validator=link_validator or NoNetworkValidator(),
         overall_timeout_seconds=overall_timeout_seconds,
         provider_safety_reserve_seconds=provider_safety_reserve_seconds,
     )
@@ -301,6 +315,34 @@ async def test_stage_a_does_not_write_database() -> None:
 
     assert result.company is not None
     assert provider.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_remote_search_only_validates_recruitment_links_returned_by_kimi() -> None:
+    """Breaks if web search scans an official homepage and adds unrequested links."""
+    recruitment_url = "https://jobs.acme.example/campus"
+    provider_candidate = candidate()
+    provider_candidate.recruitment_links = [
+        RecruitmentLinkCandidate(
+            title="Acme campus recruitment",
+            url=recruitment_url,
+            channel_type="official_campus",
+            claimed_official=True,
+        )
+    ]
+    validator = TrackingValidator()
+
+    result = await service(
+        LocalRepository(),
+        [StaticProvider(provider_candidate)],
+        link_validator=validator,
+    ).search_company(
+        CompanyIntelligenceSearchRequest(company_name="Acme Corporation", force_refresh=True),
+        actor_id="kimi-only-links-user",
+    )
+
+    assert validator.validated_urls == [recruitment_url]
+    assert [link.url for link in result.recruitment_links] == [recruitment_url]
 
 
 def test_v1_default_timeout_reserves_finalization_time_after_provider_work() -> None:

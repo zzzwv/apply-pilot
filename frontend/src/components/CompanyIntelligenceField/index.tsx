@@ -16,6 +16,7 @@ type Props = {
   value?: string;
   initialCompany?: Company;
   onChange: (companyId: string | undefined) => void;
+  onRecruitmentLinkChange?: (url: string | undefined) => void;
 };
 
 const verificationLabels: Record<VerificationStatus, string> = {
@@ -67,7 +68,12 @@ function toEditableLink(link: RecruitmentLinkCandidate): EditableRecruitmentLink
   };
 }
 
-export function CompanyIntelligenceField({ value, initialCompany, onChange }: Props) {
+export function CompanyIntelligenceField({
+  value,
+  initialCompany,
+  onChange,
+  onRecruitmentLinkChange,
+}: Props) {
   const [companyName, setCompanyName] = useState(initialCompany?.full_name ?? "");
   const [localMatches, setLocalMatches] = useState<Company[]>([]);
   const [searchingLocal, setSearchingLocal] = useState(false);
@@ -136,6 +142,22 @@ export function CompanyIntelligenceField({ value, initialCompany, onChange }: Pr
     setDraft(candidate);
     setCompanyName(candidate.company_name);
     setSelectedUrls(candidate.recruitment_links.map((link) => link.url));
+    onRecruitmentLinkChange?.(
+      [...candidate.recruitment_links].sort(
+        (first, second) => Number(second.claimed_official) - Number(first.claimed_official),
+      )[0]?.url,
+    );
+  };
+
+  const selectRecruitmentLink = (link: RecruitmentLinkCandidate, checked: boolean) => {
+    const nextUrls = checked
+      ? [...selectedUrls, link.url]
+      : selectedUrls.filter((url) => url !== link.url);
+    setSelectedUrls(nextUrls);
+    const nextLink = checked
+      ? link
+      : orderedLinks.find((candidate) => nextUrls.includes(candidate.url));
+    onRecruitmentLinkChange?.(nextLink?.url);
   };
 
   const fetchWebIntelligence = async () => {
@@ -285,7 +307,7 @@ export function CompanyIntelligenceField({ value, initialCompany, onChange }: Pr
             {orderedLinks.map((link) => (
               <article className="company-intelligence-link" key={link.url}>
                 <div className="company-intelligence-link__title">
-                  <Checkbox aria-label={`选择${link.title}`} checked={selectedUrls.includes(link.url)} onChange={(event) => setSelectedUrls((urls) => event.target.checked ? [...urls, link.url] : urls.filter((url) => url !== link.url))}>
+                  <Checkbox aria-label={`选择${link.title}`} checked={selectedUrls.includes(link.url)} onChange={(event) => selectRecruitmentLink(link, event.target.checked)}>
                     {link.title}
                   </Checkbox>
                   <Tag className={link.claimed_official ? "company-intelligence-link__provenance company-intelligence-link__provenance--official" : "company-intelligence-link__provenance"}>{link.claimed_official ? "官方招聘" : "第三方来源"}</Tag>

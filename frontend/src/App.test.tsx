@@ -1,11 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { AxiosError, type AxiosResponse } from "axios";
 import { BrowserRouter, MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 import { getCurrentUser } from "./api/auth";
 import { listApplications } from "./api/applications";
+import { apiClient } from "./api/client";
 import { useAuthStore } from "./store/auth";
 
 vi.mock("./api/applications", () => ({
@@ -93,6 +95,50 @@ describe("App", () => {
 
     await waitFor(() => expect(currentUser).toHaveBeenCalledTimes(1));
     expect(useAuthStore.getState().user?.id).toBe("user-a");
+  });
+
+  it("clears an expired session when a protected API request returns 401", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const adapter = apiClient.defaults.adapter;
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/applications"]}>
+          <App queryClient={queryClient} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+
+    localStorage.setItem("job_tracker_access_token", "expired-token");
+    useAuthStore.setState({
+      user: { id: "user-a", username: "alice", email: "a@example.com" },
+      initialized: true,
+    });
+    queryClient.setQueryData(["applications", "cloud", "user-a"], { items: [] });
+    apiClient.defaults.adapter = () => Promise.reject(
+      new AxiosError(
+        "Unauthorized",
+        "ERR_BAD_REQUEST",
+        undefined,
+        undefined,
+        { status: 401 } as AxiosResponse,
+      ),
+    );
+
+    try {
+      await expect(apiClient.get("/applications")).rejects.toMatchObject({ response: { status: 401 } });
+      await waitFor(() => expect(useAuthStore.getState().user).toBeUndefined());
+      expect(localStorage.getItem("job_tracker_access_token")).toBeNull();
+      expect(queryClient.getQueryData(["applications", "cloud", "user-a"])).toBeUndefined();
+      expect(await screen.findByRole("button", { name: /登\s*录/ })).toBeDefined();
+    } finally {
+      apiClient.defaults.adapter = adapter;
+      localStorage.setItem("job_tracker_access_token", "token");
+      useAuthStore.setState({
+        user: { id: "user-a", username: "alice", email: "a@example.com" },
+        initialized: true,
+      });
+    }
   });
 
   it("debounces a keyword search and resets pagination to the first page", async () => {
