@@ -3770,15 +3770,24 @@ Dashboard：
 
 ## Phase 6
 
-同步与性能：
+同步与性能封板实现：
 
 ```text
-IndexedDB
-云同步
-Redis
-Rate Limit
-缓存
+Guest -> IndexedDB namespace "guest" (source of truth)
+Login -> explicit import prompt -> JWT batch import (<= 200)
+      -> (user_id, client_sync_id) partial unique index
+      -> server mapping -> cloud refetch -> exact Guest cleanup
+
+Authenticated -> PostgreSQL (source of truth)
+              -> IndexedDB namespace "cloud:<user_id>" (cache only)
+              -> network read failure -> current-user stale list/detail fallback
 ```
+
+- Guest 与 cloud 继续复用 Application、Detail、Status Timeline 与 Dashboard UI；guest status update 以 application/status log 原子写入。
+- 导入输入视为不可信：JWT 派生 owner，顶层与嵌套 Pydantic 模型拒绝未知字段，status history 必须是从 `None` 连续衔接并以 `current_status` 结束的链。
+- 401、403 和 detail 404 禁止 cache fallback。cloud 离线写操作不写 IndexedDB、不伪装成功。
+- 登出取消并移除当前用户 query/state；cloud cache 可保留，但没有匹配认证用户时不可访问。
+- 本机 Docker/WSL2 基准使用 1,200 applications / 30 companies / 10 次 warm measured runs。列表/Search 最高 P95 为 28.0ms，Dashboard 最高 P95 为 15.5ms；IndexedDB 1,000 条本地健全性通过。该结果不是生产容量承诺，First Load 为 `Not independently verified`。
 
 ---
 

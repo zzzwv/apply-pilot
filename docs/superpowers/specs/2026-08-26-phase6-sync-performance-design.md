@@ -57,3 +57,9 @@ The closeout includes backend tests and Ruff, frontend tests and production buil
 ## Test strategy
 
 Every task follows RED -> GREEN -> targeted regression. Frontend tests use `fake-indexeddb` only if required to exercise the real local repository. Backend tests cover import ownership, validation, partial success, company behavior, status-history preservation, and idempotency. Frontend tests cover local CRUD/reload persistence, filtering, dashboard metrics, import UX, cache fallback, and logout/user isolation. Performance checks remain a dedicated benchmark, not a latency assertion in ordinary CI tests.
+
+## Final acceptance evidence
+
+The closure reruns full backend and frontend regressions, production build, Docker health, Redis PING, Alembic current/head/history, live PostgreSQL index inspection, and tracked-file secret hygiene. Security regression additionally verifies IDOR protection for application/detail/status-log read and mutation, strict import validation, per-user `client_sync_id` idempotency, and visibility after a second authenticated session refetches.
+
+The only V1 non-goals are offline mutation queue/replay, PWA/service worker, WebSocket collaboration, and independently measured browser first-load time. These are recorded as V2 or non-blocking work rather than represented as Phase 6 behavior.
