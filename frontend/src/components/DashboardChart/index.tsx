@@ -3,7 +3,9 @@ import { init, use, type EChartsType } from "echarts/core";
 import { BarChart, LineChart, PieChart } from "echarts/charts";
 import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
-import { Empty } from "antd";
+
+import emptyDashboard from "../../assets/illustrations/empty-dashboard.svg";
+import { EmptyState } from "../EmptyState";
 
 use([BarChart, LineChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
 
@@ -29,6 +31,12 @@ export function DashboardChart({ ariaLabel, option, isEmpty }: DashboardChartPro
     };
   }, [isEmpty, option]);
 
-  if (isEmpty) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无图表数据" />;
+  if (isEmpty) {
+    return <EmptyState
+      image={{ src: emptyDashboard, alt: "暂无图表数据" }}
+      title="暂无图表数据"
+      description="当前筛选条件下暂无可展示的图表数据。"
+    />;
+  }
   return <div ref={container} aria-label={ariaLabel} style={{ height: 300, width: "100%" }} />;
 }
