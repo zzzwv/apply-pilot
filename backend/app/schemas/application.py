@@ -2,7 +2,7 @@ from datetime import date, datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.enums import ApplicationStatus, ApplicationType
 
@@ -143,12 +143,16 @@ class SyncCompany(BaseModel):
     nature: str | None = Field(default=None, max_length=64)
     size: str | None = Field(default=None, max_length=64)
 
+    model_config = {"extra": "forbid"}
+
 
 class SyncStatusLog(BaseModel):
     from_status: ApplicationStatus | None = None
     to_status: ApplicationStatus
     remark: str | None = None
     changed_at: datetime
+
+    model_config = {"extra": "forbid"}
 
 
 class SyncImportApplication(BaseModel):
@@ -169,6 +173,17 @@ class SyncImportApplication(BaseModel):
     status_logs: list[SyncStatusLog] = Field(min_length=1, max_length=100)
 
     model_config = {"extra": "forbid"}
+
+    @model_validator(mode="after")
+    def validate_status_history(self) -> "SyncImportApplication":
+        previous_status: ApplicationStatus | None = None
+        for status_log in self.status_logs:
+            if status_log.from_status != previous_status:
+                raise ValueError("status_logs must form a continuous status chain")
+            previous_status = status_log.to_status
+        if previous_status != self.current_status:
+            raise ValueError("status_logs must end at current_status")
+        return self
 
 
 class SyncImportRequest(BaseModel):
