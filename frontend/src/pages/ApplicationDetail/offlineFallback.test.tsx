@@ -42,7 +42,8 @@ describe("ApplicationDetailPage offline fallback", () => {
 
     render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/applications/cached"]}><Routes><Route path="/applications/:id" element={<ApplicationDetailPage />} /></Routes></MemoryRouter></QueryClientProvider>);
 
-    expect(await screen.findByText("Cached detail")).toBeDefined();
+    expect(await screen.findByRole("heading", { name: "Cached detail", level: 1 })).toBeDefined();
+    expect((await screen.findByRole("region", { name: "当前状态" })).textContent).toContain("已投简历");
     expect(await screen.findByText(/当前网络不可用/)).toBeDefined();
     expect((await screen.findAllByText("cached")).length).toBeGreaterThan(1);
   });

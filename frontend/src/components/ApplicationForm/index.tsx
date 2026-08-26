@@ -75,22 +75,34 @@ export function ApplicationForm({ application, guest = false, open, saving, onCl
       width={520}
       extra={<Button form="application-form" type="primary" htmlType="submit" loading={saving}>保存</Button>}
     >
-      <Form<FormValues> id="application-form" layout="vertical" form={form} initialValues={initialValues} onFinish={submit}>
-        {guest ? <><Form.Item name="local_company_name" label="本地企业名称" rules={[{ required: true, message: "请输入企业名称" }]}><Input /></Form.Item><Form.Item name="local_company_industry" label="行业"><Input /></Form.Item><Form.Item name="local_company_nature" label="企业性质"><Input /></Form.Item><Form.Item name="local_company_size" label="企业规模"><Input /></Form.Item><p>登录后可使用企业信息智能获取</p></> : <><Form.Item name="company_id" hidden rules={[{ required: true, message: "请先关联或创建企业" }]}><Input /></Form.Item><Form.Item label="企业" required><CompanyIntelligenceField value={form.getFieldValue("company_id")} initialCompany={application?.company} onChange={(companyId) => form.setFieldValue("company_id", companyId)} /></Form.Item></>}
-        <Form.Item name="job_title" label="投递岗位" rules={[{ required: true, message: "请输入岗位名称" }]}><Input /></Form.Item>
-        <Space size="large" style={{ display: "flex" }}>
-          <Form.Item name="application_type" label="投递类型" rules={[{ required: true }]}><Select options={typeOptions} style={{ minWidth: 180 }} /></Form.Item>
-          <Form.Item name="application_date" label="投递时间" rules={[{ required: true }]}><DatePicker /></Form.Item>
-        </Space>
-        <Form.Item name="channel" label="投递渠道" rules={[{ required: true, message: "请输入投递渠道" }]}><Input placeholder="official_campus / referral" /></Form.Item>
-        {!application && <Form.Item name="current_status" label="初始状态" rules={[{ required: true }]}><Select options={statusOptions} /></Form.Item>}
-        <Form.Item name="resume_version" label="简历版本"><Input /></Form.Item>
-        <Form.Item name="salary" label="薪资"><Input /></Form.Item>
-        <Form.Item name="city" label="城市"><Input /></Form.Item>
-        <Form.Item name="education_requirement" label="学历要求"><Input /></Form.Item>
-        <Form.Item name="deadline" label="截止日期"><DatePicker /></Form.Item>
-        <Form.Item name="requirements" label="岗位要求"><Input.TextArea rows={3} /></Form.Item>
-        <Form.Item name="note" label="备注"><Input.TextArea rows={3} /></Form.Item>
+      <Form<FormValues> id="application-form" className="application-form" layout="vertical" form={form} initialValues={initialValues} onFinish={submit}>
+        <section className="application-form__section" aria-labelledby="application-form-basic">
+          <h2 id="application-form-basic" className="application-form__section-heading">基本信息</h2>
+          <Form.Item name="job_title" label="投递岗位" rules={[{ required: true, message: "请输入岗位名称" }]}><Input /></Form.Item>
+        </section>
+        <section className="application-form__section" aria-labelledby="application-form-company">
+          <h2 id="application-form-company" className="application-form__section-heading">企业信息</h2>
+          {guest ? <><Form.Item name="local_company_name" label="本地企业名称" rules={[{ required: true, message: "请输入企业名称" }]}><Input /></Form.Item><Form.Item name="local_company_industry" label="行业"><Input /></Form.Item><Form.Item name="local_company_nature" label="企业性质"><Input /></Form.Item><Form.Item name="local_company_size" label="企业规模"><Input /></Form.Item><p>登录后可使用企业信息智能获取</p></> : <><Form.Item name="company_id" hidden rules={[{ required: true, message: "请先关联或创建企业" }]}><Input /></Form.Item><Form.Item label="企业" required><CompanyIntelligenceField value={form.getFieldValue("company_id")} initialCompany={application?.company} onChange={(companyId) => form.setFieldValue("company_id", companyId)} /></Form.Item></>}
+        </section>
+        <section className="application-form__section" aria-labelledby="application-form-application">
+          <h2 id="application-form-application" className="application-form__section-heading">投递信息</h2>
+          <Space size="large" className="application-form__field-row">
+            <Form.Item name="application_type" label="投递类型" rules={[{ required: true }]}><Select options={typeOptions} style={{ minWidth: 180 }} /></Form.Item>
+            <Form.Item name="application_date" label="投递时间" rules={[{ required: true }]}><DatePicker /></Form.Item>
+          </Space>
+          <Form.Item name="channel" label="投递渠道" rules={[{ required: true, message: "请输入投递渠道" }]}><Input placeholder="official_campus / referral" /></Form.Item>
+          {!application && <Form.Item name="current_status" label="初始状态" rules={[{ required: true }]}><Select options={statusOptions} /></Form.Item>}
+        </section>
+        <section className="application-form__section" aria-labelledby="application-form-additional">
+          <h2 id="application-form-additional" className="application-form__section-heading">补充信息</h2>
+          <Form.Item name="resume_version" label="简历版本"><Input /></Form.Item>
+          <Form.Item name="salary" label="薪资"><Input /></Form.Item>
+          <Form.Item name="city" label="城市"><Input /></Form.Item>
+          <Form.Item name="education_requirement" label="学历要求"><Input /></Form.Item>
+          <Form.Item name="deadline" label="截止日期"><DatePicker /></Form.Item>
+          <Form.Item name="requirements" label="岗位要求"><Input.TextArea rows={3} /></Form.Item>
+          <Form.Item name="note" label="备注"><Input.TextArea rows={3} /></Form.Item>
+        </section>
       </Form>
     </Drawer>
   );

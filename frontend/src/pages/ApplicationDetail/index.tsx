@@ -66,32 +66,49 @@ export function ApplicationDetailPage() {
   const cachedAt = application.data.cached_at ?? logs.data?.cached_at;
 
   return (
-    <section>
-      <Space direction="vertical" size="large" style={{ width: "100%" }}>
+    <section className="application-detail-page">
+      <Space direction="vertical" size="large" className="application-detail-page__content">
         {stale && <Alert type="warning" showIcon message={cachedAt ? `当前网络不可用，正在显示 ${new Date(cachedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} 缓存的数据。` : "当前网络不可用，正在显示最近缓存的数据。"} />}
-        <Space><Link to="/applications">← 返回投递列表</Link>{guest && <Link to="/applications" state={{ editApplication: item }}>编辑</Link>}</Space>
-        {guest && <Popconfirm title="确认删除这条本地投递记录？" onConfirm={() => remove.mutate()}><Button danger>删除本地投递</Button></Popconfirm>}
-        <Typography.Title level={2}>{item.job_title}</Typography.Title>
-        <Card title="投递信息">
-          <Descriptions column={1}>
-            <Descriptions.Item label="企业 ID">{item.company_id}</Descriptions.Item>
-            <Descriptions.Item label="投递类型">{applicationTypeLabels[item.application_type]}</Descriptions.Item>
-            <Descriptions.Item label="投递时间">{item.application_date}</Descriptions.Item>
-            <Descriptions.Item label="投递渠道">{item.channel}</Descriptions.Item>
-            <Descriptions.Item label="当前状态"><StatusTag status={item.current_status} /></Descriptions.Item>
-            <Descriptions.Item label="备注">{item.note || "—"}</Descriptions.Item>
-          </Descriptions>
-        </Card>
-        <Card title="更新状态">
-          <Space wrap>
-            <Select placeholder="选择新状态" value={status} onChange={setStatus} style={{ minWidth: 180 }} options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))} />
-            <Input placeholder="状态备注（可选）" value={remark} onChange={(event) => setRemark(event.target.value)} style={{ width: 240 }} />
-            <Button type="primary" disabled={!status} loading={changeStatus.isPending} onClick={() => changeStatus.mutate(undefined, { onSuccess: () => { message.success("状态已更新"); setRemark(""); }, onError: (error) => message.error(isRecoverableReadFailure(error) ? "当前网络不可用，请恢复网络后再修改" : "状态更新失败，请检查登录状态") })}>更新状态</Button>
-          </Space>
-        </Card>
-        <Card title="状态历史">
-          <Timeline items={(logs.data?.data ?? []).map((log) => ({ children: <><StatusTag status={log.to_status} /> <span>{new Date(log.changed_at).toLocaleString()}</span>{log.remark && <Typography.Paragraph>{log.remark}</Typography.Paragraph>}</> }))} />
-        </Card>
+        <header className="application-detail-page__header">
+          <Space><Link to="/applications">← 返回投递列表</Link>{guest && <Link to="/applications" state={{ editApplication: item }}>编辑</Link>}</Space>
+          {guest && <Popconfirm title="确认删除这条本地投递记录？" onConfirm={() => remove.mutate()}><Button danger>删除本地投递</Button></Popconfirm>}
+          <Typography.Title level={1} className="application-detail-page__title">{item.job_title}</Typography.Title>
+        </header>
+        <div className="application-detail-page__layout">
+          <div className="application-detail-page__primary">
+            <Card title="投递信息" className="application-detail-page__card">
+              <Descriptions column={1}>
+                <Descriptions.Item label="企业 ID">{item.company_id}</Descriptions.Item>
+              </Descriptions>
+            </Card>
+            <Card title="更新状态" className="application-detail-page__card">
+              <Space wrap>
+                <Select placeholder="选择新状态" value={status} onChange={setStatus} style={{ minWidth: 180 }} options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))} />
+                <Input placeholder="状态备注（可选）" value={remark} onChange={(event) => setRemark(event.target.value)} style={{ width: 240 }} />
+                <Button type="primary" disabled={!status} loading={changeStatus.isPending} onClick={() => changeStatus.mutate(undefined, { onSuccess: () => { message.success("状态已更新"); setRemark(""); }, onError: (error) => message.error(isRecoverableReadFailure(error) ? "当前网络不可用，请恢复网络后再修改" : "状态更新失败，请检查登录状态") })}>更新状态</Button>
+              </Space>
+            </Card>
+            <Card title="状态历史" className="application-detail-page__card">
+              <Timeline items={(logs.data?.data ?? []).map((log) => ({ children: <><StatusTag status={log.to_status} /> <span>{new Date(log.changed_at).toLocaleString()}</span>{log.remark && <Typography.Paragraph>{log.remark}</Typography.Paragraph>}</> }))} />
+            </Card>
+          </div>
+          <aside className="application-detail-page__metadata">
+            <Card className="application-detail-page__card">
+              <section aria-label="当前状态" className="application-detail-page__current-status">
+                <Typography.Text type="secondary">当前状态</Typography.Text>
+                <StatusTag status={item.current_status} />
+              </section>
+            </Card>
+            <Card title="投递元数据" className="application-detail-page__card">
+              <Descriptions column={1}>
+                <Descriptions.Item label="投递类型">{applicationTypeLabels[item.application_type]}</Descriptions.Item>
+                <Descriptions.Item label="投递时间">{item.application_date}</Descriptions.Item>
+                <Descriptions.Item label="投递渠道">{item.channel}</Descriptions.Item>
+                <Descriptions.Item label="备注">{item.note || "—"}</Descriptions.Item>
+              </Descriptions>
+            </Card>
+          </aside>
+        </div>
       </Space>
     </section>
   );
