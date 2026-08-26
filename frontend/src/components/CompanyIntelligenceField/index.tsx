@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button, Checkbox, Divider, Input, Space, Tag, Typography } from "antd";
+import { Alert, Button, Checkbox, Input, Space, Tag, Typography } from "antd";
 
 import { confirmCompanyIntelligence, searchCompanyIntelligence } from "../../api/companyIntelligence";
 import { createCompany, searchLocalCompanies, type Company } from "../../api/companies";
@@ -243,7 +243,7 @@ export function CompanyIntelligenceField({ value, initialCompany, onChange }: Pr
   };
 
   return (
-    <section aria-label="企业智能信息">
+    <section className="company-intelligence-field" aria-label="企业智能信息">
       <label htmlFor="company-intelligence-name">企业名称</label>
       <Space.Compact style={{ display: "flex", marginTop: 4 }}>
         <Input id="company-intelligence-name" value={companyName} onChange={(event) => changeCompanyName(event.target.value)} placeholder="输入企业名称或别名" />
@@ -262,9 +262,15 @@ export function CompanyIntelligenceField({ value, initialCompany, onChange }: Pr
       {manualError && <Alert style={{ marginTop: 12 }} type="error" showIcon message={manualError} />}
 
       {draft && (
-        <div style={{ marginTop: 16 }}>
-          <Divider orientation="left">企业信息预览（可编辑）</Divider>
-          <Space direction="vertical" style={{ display: "flex" }}>
+        <section className="company-intelligence-preview" aria-labelledby="company-intelligence-preview-title">
+          <div className="company-intelligence-preview__heading">
+            <div>
+              <Typography.Title id="company-intelligence-preview-title" level={3}>企业信息预览</Typography.Title>
+              <Typography.Text type="secondary">联网获取的信息可在确认前编辑。</Typography.Text>
+            </div>
+            <Tag className="company-intelligence-preview__verification">验证状态：{verificationLabels[draft.verification_status ?? "unverified"]}</Tag>
+          </div>
+          <Space className="company-intelligence-preview__fields" direction="vertical" style={{ display: "flex" }}>
             <Input aria-label="企业全称" value={draft.company_name} onChange={(event) => updateDraft("company_name", event.target.value)} />
             <Input aria-label="简称" value={draft.short_name ?? ""} placeholder="简称" onChange={(event) => updateDraft("short_name", event.target.value)} />
             <Input aria-label="行业" value={draft.industry ?? ""} placeholder="行业" onChange={(event) => updateDraft("industry", event.target.value)} />
@@ -273,28 +279,34 @@ export function CompanyIntelligenceField({ value, initialCompany, onChange }: Pr
             <Input aria-label="官网" value={draft.official_website ?? ""} placeholder="官网" onChange={(event) => updateDraft("official_website", event.target.value)} />
             <Input.TextArea aria-label="企业描述" value={draft.description ?? ""} placeholder="企业描述" onChange={(event) => updateDraft("description", event.target.value)} />
           </Space>
-          <Tag style={{ marginTop: 8 }}>{verificationLabels[draft.verification_status ?? "unverified"]}</Tag>
-          <Divider orientation="left">招聘入口</Divider>
-          <Space direction="vertical" style={{ display: "flex" }}>
+          <section className="company-intelligence-preview__section" aria-labelledby="company-intelligence-recruitment-title">
+            <Typography.Title id="company-intelligence-recruitment-title" level={4}>招聘链接</Typography.Title>
+            <Space className="company-intelligence-preview__list" direction="vertical" style={{ display: "flex" }}>
             {orderedLinks.map((link) => (
-              <div key={link.url}>
-                <Checkbox aria-label={`选择${link.title}`} checked={selectedUrls.includes(link.url)} onChange={(event) => setSelectedUrls((urls) => event.target.checked ? [...urls, link.url] : urls.filter((url) => url !== link.url))}>
-                  {link.title}
-                </Checkbox>
-                <Typography.Text type="secondary"> · {link.channel_type} · {linkValidationLabel(link)}</Typography.Text>
-                <Typography.Text style={{ display: "block" }}>{link.url}</Typography.Text>
-                {link.source_url && <div><Typography.Text type="secondary">来源：</Typography.Text><Typography.Text>{sourceDomain(link.source_url)}</Typography.Text> · <a href={link.source_url} target="_blank" rel="noreferrer">{link.source_url}</a></div>}
+              <article className="company-intelligence-link" key={link.url}>
+                <div className="company-intelligence-link__title">
+                  <Checkbox aria-label={`选择${link.title}`} checked={selectedUrls.includes(link.url)} onChange={(event) => setSelectedUrls((urls) => event.target.checked ? [...urls, link.url] : urls.filter((url) => url !== link.url))}>
+                    {link.title}
+                  </Checkbox>
+                  <Tag className={link.claimed_official ? "company-intelligence-link__provenance company-intelligence-link__provenance--official" : "company-intelligence-link__provenance"}>{link.claimed_official ? "官方招聘" : "第三方来源"}</Tag>
+                </div>
+                <Typography.Text type="secondary">渠道：{link.channel_type} · 验证：{linkValidationLabel(link)}</Typography.Text>
+                <a className="company-intelligence-link__url" href={link.url} target="_blank" rel="noreferrer">{link.url}</a>
+                {link.source_url && <div className="company-intelligence-link__source"><Typography.Text type="secondary">来源：</Typography.Text><Typography.Text>{sourceDomain(link.source_url)}</Typography.Text> · <a href={link.source_url} target="_blank" rel="noreferrer">{link.source_url}</a></div>}
                 {link.evidence && <Typography.Text type="secondary" style={{ display: "block" }}>依据：{link.evidence}</Typography.Text>}
                 {link.last_checked_at && <Typography.Text type="secondary" style={{ display: "block" }}>最后检查：{link.last_checked_at}</Typography.Text>}
-              </div>
+              </article>
             ))}
-          </Space>
-          <Divider orientation="left">来源</Divider>
-          <Space direction="vertical" style={{ display: "flex" }}>
-            {draft.sources.map((source) => <div key={source.url}><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a><Typography.Text type="secondary"> · {source.source_type} · </Typography.Text><Typography.Text>{sourceDomain(source.url)}</Typography.Text><Typography.Text style={{ display: "block" }}>{source.url}</Typography.Text></div>)}
-          </Space>
-          <Button style={{ marginTop: 16 }} type="primary" loading={confirming} onClick={confirmCandidate}>确认企业信息</Button>
-        </div>
+            </Space>
+          </section>
+          <section className="company-intelligence-preview__section" aria-labelledby="company-intelligence-sources-title">
+            <Typography.Title id="company-intelligence-sources-title" level={4}>信息来源</Typography.Title>
+            <Space className="company-intelligence-preview__list" direction="vertical" style={{ display: "flex" }}>
+              {draft.sources.map((source) => <article className="company-intelligence-source" key={source.url}><div><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a><Tag className={source.source_type === "official" ? "company-intelligence-source__type company-intelligence-source__type--official" : "company-intelligence-source__type"}>{source.source_type === "official" ? "官方来源" : "第三方来源"}</Tag></div><Typography.Text type="secondary">{source.source_type} · {sourceDomain(source.url)}</Typography.Text><a className="company-intelligence-link__url" href={source.url} target="_blank" rel="noreferrer">{source.url}</a></article>)}
+            </Space>
+          </section>
+          <Button className="company-intelligence-preview__confirm" type="primary" loading={confirming} onClick={confirmCandidate}>确认企业信息</Button>
+        </section>
       )}
 
       {!draft && <Button style={{ marginTop: 12 }} loading={confirming} onClick={createManualCompany}>创建手动企业</Button>}

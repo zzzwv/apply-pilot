@@ -85,7 +85,7 @@ describe("CompanyIntelligenceField", () => {
     expect(searchCompanyIntelligence).not.toHaveBeenCalled();
   });
 
-  it("shows loading then an editable partial candidate preview with ordered recruitment links and sources", async () => {
+  it("shows a labelled intelligence preview with traceable recruitment links and source provenance", async () => {
     vi.mocked(searchLocalCompanies).mockResolvedValue([]);
     let resolveSearch: ((value: CompanyIntelligenceSearchResult) => void) | undefined;
     vi.mocked(searchCompanyIntelligence).mockImplementation(
@@ -100,12 +100,17 @@ describe("CompanyIntelligenceField", () => {
     resolveSearch?.({ company: candidate, recruitment_links: candidate.recruitment_links, sources: candidate.sources, partial: true, warnings: ["招聘链接验证不完整"], allow_manual_input: true });
 
     await waitFor(() => expect(screen.getByText("部分信息暂未获取，可手动补充")).toBeDefined());
+    expect(screen.getByRole("heading", { name: "招聘链接" })).toBeDefined();
+    expect(screen.getByText("验证状态：候选")).toBeDefined();
     expect((screen.getByLabelText("企业全称") as HTMLInputElement).value).toBe("腾讯科技");
     expect(screen.getByText(/暂无法验证/)).toBeDefined();
+    expect(screen.getByText("第三方来源")).toBeDefined();
     expect(screen.getAllByRole("checkbox").map((item) => item.getAttribute("aria-label"))).toEqual(["选择校招官网", "选择第三方招聘"]);
-    expect(screen.getByText("https://join.qq.com")).toBeDefined();
+    expect(screen.getByRole("link", { name: "https://join.qq.com" }).getAttribute("href")).toBe("https://join.qq.com");
+    expect(screen.getAllByRole("link", { name: "https://jobs.example.com/tencent" }).map((link) => link.getAttribute("href"))).toEqual(["https://jobs.example.com/tencent", "https://jobs.example.com/tencent"]);
     expect(screen.getByText("最后检查：2026-08-25T02:00:00Z")).toBeDefined();
-    expect(screen.getAllByText("www.tencent.com")).toHaveLength(2);
+    expect(screen.getByText("www.tencent.com")).toBeDefined();
+    expect(screen.getByText("official · www.tencent.com")).toBeDefined();
     expect(screen.getByRole("link", { name: "腾讯关于我们" }).getAttribute("href")).toBe("https://www.tencent.com/about");
   });
 

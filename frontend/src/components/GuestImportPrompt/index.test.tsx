@@ -59,7 +59,10 @@ describe("GuestImportPrompt", () => {
     await repository.create({ ...input, job_title: "Second" });
     renderPrompt("dismiss-user");
 
-    expect(await screen.findByText("检测到 2 条本地投递记录")).toBeDefined();
+    const dialog = await screen.findByRole("dialog", { name: "同步本地投递记录" });
+    expect(dialog.textContent).toContain("检测到 2 条本地投递记录");
+    expect(screen.getByRole("button", { name: "同步到账号" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "暂不同步" })).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "暂不同步" }));
     expect(mockImport).not.toHaveBeenCalled();
     expect(await repository.count()).toBe(2);

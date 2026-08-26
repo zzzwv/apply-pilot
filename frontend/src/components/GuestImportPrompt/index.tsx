@@ -73,26 +73,31 @@ export function GuestImportPrompt({ queryClient }: Props) {
 
   if (!canDetect || count.data === undefined || count.data === 0 || dismissed) return notice ? <Typography.Text role="status">{notice}</Typography.Text> : null;
 
-  return <Modal title="同步本地投递记录" open footer={null} closable={false}>
-    <Typography.Paragraph>检测到 {count.data} 条本地投递记录</Typography.Paragraph>
-    <Typography.Paragraph>是否同步到当前账号？</Typography.Paragraph>
-    <Button
-      type="primary"
-      loading={sync.isPending}
-      disabled={sync.isPending}
-      onClick={() => {
-        if (syncing.current) return;
-        syncing.current = true;
-        sync.mutate();
-      }}
-    >
-      同步到账号
-    </Button>
-    <Button style={{ marginLeft: 8 }} disabled={sync.isPending} onClick={() => {
-      dismissedUserIds.add(user!.id);
-      setDismissed(true);
-    }}>
-      暂不同步
-    </Button>
+  return <Modal className="guest-import-modal" title="同步本地投递记录" open footer={null} closable={false}>
+    <div className="guest-import-modal__content">
+      <Typography.Text className="guest-import-modal__eyebrow">本地记录提示</Typography.Text>
+      <Typography.Paragraph className="guest-import-modal__count">检测到 {count.data} 条本地投递记录</Typography.Paragraph>
+      <Typography.Paragraph className="guest-import-modal__description">是否同步到当前账号？</Typography.Paragraph>
+      <div className="guest-import-modal__actions">
+        <Button
+          type="primary"
+          loading={sync.isPending}
+          disabled={sync.isPending}
+          onClick={() => {
+            if (syncing.current) return;
+            syncing.current = true;
+            sync.mutate();
+          }}
+        >
+          同步到账号
+        </Button>
+        <Button disabled={sync.isPending} onClick={() => {
+          dismissedUserIds.add(user!.id);
+          setDismissed(true);
+        }}>
+          暂不同步
+        </Button>
+      </div>
+    </div>
   </Modal>;
 }
