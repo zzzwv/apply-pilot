@@ -8,11 +8,15 @@ import type {
 export async function searchCompanyIntelligence(
   companyName: string,
   forceRefresh = false,
+  signal?: AbortSignal,
 ): Promise<CompanyIntelligenceSearchResult> {
-  return unwrap(apiClient.post("/company-intelligence/search", {
+  const payload = {
     company_name: companyName,
     force_refresh: forceRefresh,
-  }));
+  };
+  return unwrap(signal
+    ? apiClient.post("/company-intelligence/search", payload, { signal })
+    : apiClient.post("/company-intelligence/search", payload));
 }
 
 export async function confirmCompanyIntelligence(

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Checkbox, Divider, Input, Space, Tag, Typography } from "antd";
 
 import { confirmCompanyIntelligence, searchCompanyIntelligence } from "../../api/companyIntelligence";
@@ -80,6 +80,7 @@ export function CompanyIntelligenceField({ value, initialCompany, onChange }: Pr
   const [manualError, setManualError] = useState<string>();
   const [linkedCompany, setLinkedCompany] = useState<Company | undefined>(initialCompany);
   const [linkedExistingCompany, setLinkedExistingCompany] = useState(Boolean(initialCompany));
+  const webRequest = useRef<AbortController | undefined>(undefined);
 
   useEffect(() => {
     if (initialCompany && value === initialCompany.id) {
@@ -87,6 +88,8 @@ export function CompanyIntelligenceField({ value, initialCompany, onChange }: Pr
       setLinkedExistingCompany(true);
     }
   }, [initialCompany, value]);
+
+  useEffect(() => () => webRequest.current?.abort(), []);
 
   useEffect(() => {
     const keyword = companyName.trim();
@@ -138,18 +141,36 @@ export function CompanyIntelligenceField({ value, initialCompany, onChange }: Pr
   const fetchWebIntelligence = async () => {
     const keyword = companyName.trim();
     if (!keyword) return;
+    const controller = new AbortController();
+    webRequest.current?.abort();
+    webRequest.current = controller;
     setManualError(undefined);
     setSearchingWeb(true);
     try {
-      applySearchResult(await searchCompanyIntelligence(keyword));
+      const result = await searchCompanyIntelligence(keyword, false, controller.signal);
+      if (controller.signal.aborted || webRequest.current !== controller) return;
+      applySearchResult(result);
     } catch {
+      if (controller.signal.aborted || webRequest.current !== controller) return;
       setDraft(undefined);
       setPartial(true);
       setWarnings([]);
       setManualError("联网获取失败或请求过于频繁，请手动创建企业。");
     } finally {
-      setSearchingWeb(false);
+      if (webRequest.current === controller) {
+        webRequest.current = undefined;
+        setSearchingWeb(false);
+      }
     }
+  };
+
+  const cancelWebIntelligence = () => {
+    webRequest.current?.abort();
+    webRequest.current = undefined;
+    setSearchingWeb(false);
+    setDraft(undefined);
+    setPartial(true);
+    setWarnings(["联网获取已取消，可手动补充企业信息。"]);
   };
 
   const chooseLocalCompany = (company: Company) => {
@@ -203,12 +224,15 @@ export function CompanyIntelligenceField({ value, initialCompany, onChange }: Pr
   const createManualCompany = async () => {
     const name = companyName.trim();
     if (!name) return;
+    cancelWebIntelligence();
     setConfirming(true);
     setManualError(undefined);
     try {
       const company = await createCompany(name);
       setLinkedCompany(company);
       setLinkedExistingCompany(false);
+      setPartial(false);
+      setWarnings([]);
       onChange(company.id);
     } catch (error: unknown) {
       const status = (error as { response?: { status?: number } }).response?.status;
@@ -224,6 +248,7 @@ export function CompanyIntelligenceField({ value, initialCompany, onChange }: Pr
       <Space.Compact style={{ display: "flex", marginTop: 4 }}>
         <Input id="company-intelligence-name" value={companyName} onChange={(event) => changeCompanyName(event.target.value)} placeholder="输入企业名称或别名" />
         <Button type="primary" loading={searchingWeb} onClick={fetchWebIntelligence}>联网获取</Button>
+        {searchingWeb && <Button onClick={cancelWebIntelligence}>取消联网获取</Button>}
       </Space.Compact>
       {searchingLocal && <Typography.Text type="secondary">正在查询本地企业...</Typography.Text>}
       {localMatches.length > 0 && (
@@ -232,7 +257,7 @@ export function CompanyIntelligenceField({ value, initialCompany, onChange }: Pr
         </Space>
       )}
       {linkedCompany && <Alert style={{ marginTop: 8 }} type="success" showIcon message={linkedExistingCompany ? `已关联既有企业：${linkedCompany.full_name}` : `已关联企业：${linkedCompany.full_name}`} />}
-      {searchingWeb && <Alert style={{ marginTop: 12 }} type="info" showIcon message="正在获取企业公开信息..." />}
+      {searchingWeb && <Alert style={{ marginTop: 12 }} type="info" showIcon message="正在获取企业公开信息，联网搜索可能需要几十秒..." />}
       {partial && <Alert style={{ marginTop: 12 }} type="warning" showIcon message="部分信息暂未获取，可手动补充" description={warnings.join("；") || undefined} />}
       {manualError && <Alert style={{ marginTop: 12 }} type="error" showIcon message={manualError} />}
 

@@ -95,7 +95,7 @@ describe("CompanyIntelligenceField", () => {
 
     fireEvent.change(screen.getByLabelText("企业名称"), { target: { value: "腾讯" } });
     fireEvent.click(screen.getByRole("button", { name: "联网获取" }));
-    expect(screen.getByText("正在获取企业公开信息...")).toBeDefined();
+    expect(screen.getByText("正在获取企业公开信息，联网搜索可能需要几十秒...")).toBeDefined();
 
     resolveSearch?.({ company: candidate, recruitment_links: candidate.recruitment_links, sources: candidate.sources, partial: true, warnings: ["招聘链接验证不完整"], allow_manual_input: true });
 
@@ -107,6 +107,29 @@ describe("CompanyIntelligenceField", () => {
     expect(screen.getByText("最后检查：2026-08-25T02:00:00Z")).toBeDefined();
     expect(screen.getAllByText("www.tencent.com")).toHaveLength(2);
     expect(screen.getByRole("link", { name: "腾讯关于我们" }).getAttribute("href")).toBe("https://www.tencent.com/about");
+  });
+
+  it("allows a long-running web search to be cancelled while retaining manual entry", async () => {
+    vi.mocked(searchLocalCompanies).mockResolvedValue([]);
+    let resolveSearch: ((value: CompanyIntelligenceSearchResult) => void) | undefined;
+    vi.mocked(searchCompanyIntelligence).mockImplementation(
+      () => new Promise((resolve) => { resolveSearch = resolve; }),
+    );
+    render(<CompanyIntelligenceField value={undefined} onChange={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("企业名称"), { target: { value: "光庭信息" } });
+    fireEvent.click(screen.getByRole("button", { name: "联网获取" }));
+    expect(searchCompanyIntelligence).toHaveBeenCalledWith("光庭信息", false, expect.any(AbortSignal));
+    expect(screen.getByRole("button", { name: "取消联网获取" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "创建手动企业" })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "取消联网获取" }));
+    expect(screen.queryByText("正在获取企业公开信息，联网搜索可能需要几十秒...")).toBeNull();
+    expect(screen.getByRole("button", { name: "创建手动企业" })).toBeDefined();
+
+    resolveSearch?.({ company: candidate, recruitment_links: candidate.recruitment_links, sources: candidate.sources, partial: false, warnings: [], allow_manual_input: true });
+
+    await waitFor(() => expect(screen.queryByLabelText("企业全称")).toBeNull());
   });
 
   it("confirms an edited candidate and only sends persistence-safe fields before exposing its company ID", async () => {

@@ -59,6 +59,10 @@ class CompanyService:
         self._add_aliases(company, payload.aliases)
         self._add_selected_links(company, payload.selected_recruitment_links)
         await self.session.commit()
+        await self.session.refresh(
+            company,
+            attribute_names=["aliases", "recruitment_links"],
+        )
         return CompanyIntelligenceConfirmResponse(
             company=CompanyRead.model_validate(company),
             created=created,

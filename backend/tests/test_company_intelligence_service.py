@@ -57,6 +57,15 @@ class LocalRepository:
         return self.company
 
 
+class ReadOnlyRepository(LocalRepository):
+    """Raises if the preview path ever attempts a persistence operation."""
+
+    def __getattr__(self, name: str):
+        if name in {"add", "commit", "flush", "save", "create", "update"}:
+            raise AssertionError(f"preview attempted repository write: {name}")
+        raise AttributeError(name)
+
+
 class SlowLocalRepository(LocalRepository):
     async def find_by_name_or_alias(self, normalized_name: str) -> LocalCompany | None:
         await asyncio.sleep(0.05)
@@ -68,8 +77,10 @@ class StaticProvider:
         self.result = result
         self.calls = 0
 
-    async def search(self, company_name: str) -> CompanyCandidate:
-        del company_name
+    async def search(
+        self, company_name: str, *, deadline: float | None = None
+    ) -> CompanyCandidate:
+        del company_name, deadline
         self.calls += 1
         if isinstance(self.result, Exception):
             raise self.result
@@ -82,13 +93,47 @@ class BlockingProvider(StaticProvider):
         self.started = asyncio.Event()
         self.release = asyncio.Event()
 
-    async def search(self, company_name: str) -> CompanyCandidate:
-        del company_name
+    async def search(
+        self, company_name: str, *, deadline: float | None = None
+    ) -> CompanyCandidate:
+        del company_name, deadline
         self.calls += 1
         self.started.set()
         await self.release.wait()
         assert isinstance(self.result, CompanyCandidate)
         return self.result
+
+
+class DeadlineAwareProvider(StaticProvider):
+    def __init__(self, result: CompanyCandidate) -> None:
+        super().__init__(result)
+        self.deadlines: list[float | None] = []
+
+    async def search(
+        self, company_name: str, *, deadline: float | None = None
+    ) -> CompanyCandidate:
+        self.deadlines.append(deadline)
+        return await super().search(company_name)
+
+
+class CancellationAwareProvider(StaticProvider):
+    def __init__(self, result: CompanyCandidate) -> None:
+        super().__init__(result)
+        self.started = asyncio.Event()
+        self.cancelled = asyncio.Event()
+
+    async def search(
+        self, company_name: str, *, deadline: float | None = None
+    ) -> CompanyCandidate:
+        del company_name, deadline
+        self.calls += 1
+        self.started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled.set()
+            raise
+        raise AssertionError("unreachable")
 
 
 class FailingRedis:
@@ -201,6 +246,7 @@ def service(
     cache=None,
     rate_limit: int = 10,
     overall_timeout_seconds: float = 10,
+    provider_safety_reserve_seconds: float = 0.75,
 ):
     from app.company_intelligence.cache import CompanyIntelligenceCache
     from app.services.company_intelligence_service import CompanyIntelligenceService
@@ -217,6 +263,7 @@ def service(
         ),
         link_validator=NoNetworkValidator(),
         overall_timeout_seconds=overall_timeout_seconds,
+        provider_safety_reserve_seconds=provider_safety_reserve_seconds,
     )
 
 
@@ -237,6 +284,91 @@ async def test_exact_local_match_returns_candidate_without_calling_kimi() -> Non
     assert result.company.company_name == "acme corporation"
     assert result.company.industry == "Local software"
     assert provider.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_stage_a_does_not_write_database() -> None:
+    """Remote search and preview use only reads; Confirm owns all persistence."""
+    provider = StaticProvider(candidate())
+    repository = ReadOnlyRepository()
+
+    result = await service(repository, [provider]).search_company(
+        CompanyIntelligenceSearchRequest(
+            company_name="Two Stage Evidence Corporation", force_refresh=True
+        ),
+        actor_id="two-stage-zero-write-user",
+    )
+
+    assert result.company is not None
+    assert provider.calls == 1
+
+
+def test_v1_default_timeout_reserves_finalization_time_after_provider_work() -> None:
+    """V1 permits one synchronous Kimi tool loop while retaining response cleanup time."""
+    from app.services.company_intelligence_service import CompanyIntelligenceService
+
+    intelligence = CompanyIntelligenceService(
+        repository=LocalRepository(),
+        providers=[],
+        cache=StallingCache(),
+        link_validator=NoNetworkValidator(),
+    )
+
+    assert intelligence.overall_timeout_seconds == 60
+    assert intelligence.provider_safety_reserve_seconds == 2
+
+
+def test_default_service_uses_the_two_stage_kimi_provider() -> None:
+    """The production service must not feed web-search output directly into the domain model."""
+    from app.company_intelligence.kimi_two_stage import KimiTwoStageCompanyProvider
+    from app.services.company_intelligence_service import CompanyIntelligenceService
+
+    intelligence = CompanyIntelligenceService(
+        repository=LocalRepository(),
+        cache=StallingCache(),
+        link_validator=NoNetworkValidator(),
+    )
+
+    assert isinstance(intelligence.providers[0], KimiTwoStageCompanyProvider)
+
+
+@pytest.mark.asyncio
+async def test_service_grants_provider_a_deadline_before_the_overall_deadline() -> None:
+    """Reserve time for merge, verification, cache, and response work after Kimi."""
+    provider = DeadlineAwareProvider(candidate())
+    intelligence = service(
+        LocalRepository(), [provider], overall_timeout_seconds=1.0
+    )
+
+    result = await intelligence.search_company(
+        CompanyIntelligenceSearchRequest(company_name="Deadline Corporation"),
+        actor_id="provider-deadline-user",
+    )
+
+    assert result.company is not None
+    assert provider.deadlines[0] is not None
+    assert provider.deadlines[0] < monotonic() + 1.0
+
+
+@pytest.mark.asyncio
+async def test_service_cancellation_cleans_provider_task() -> None:
+    """Service timeout cancels and awaits the provider instead of leaving a retry behind."""
+    provider = CancellationAwareProvider(candidate())
+    intelligence = service(
+        LocalRepository(),
+        [provider],
+        overall_timeout_seconds=0.02,
+        provider_safety_reserve_seconds=0.001,
+    )
+
+    result = await intelligence.search_company(
+        CompanyIntelligenceSearchRequest(company_name="Cancellation Corporation"),
+        actor_id="provider-cancellation-user",
+    )
+
+    await asyncio.wait_for(provider.cancelled.wait(), timeout=0.1)
+    assert result.partial is True
+    assert provider.calls == 1
 
 
 @pytest.mark.asyncio

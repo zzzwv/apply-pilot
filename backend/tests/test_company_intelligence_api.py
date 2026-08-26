@@ -25,7 +25,9 @@ class EmptySession:
     async def commit(self) -> None:
         return None
 
-    async def refresh(self, _: object) -> None:
+    async def refresh(
+        self, _: object, attribute_names: list[str] | None = None
+    ) -> None:
         return None
 
 
@@ -222,7 +224,9 @@ async def test_confirmation_creates_company_aliases_and_only_selected_links(
         async def commit(self) -> None:
             self.commits += 1
 
-        async def refresh(self, _: object) -> None:
+        async def refresh(
+            self, _: object, attribute_names: list[str] | None = None
+        ) -> None:
             return None
 
     class EmptyRepository:
@@ -294,7 +298,9 @@ async def test_confirmation_deduplicates_existing_data_without_overwriting_confl
         async def commit(self) -> None:
             self.commits += 1
 
-        async def refresh(self, _: object) -> None:
+        async def refresh(
+            self, _: object, attribute_names: list[str] | None = None
+        ) -> None:
             return None
 
     class ExistingRepository:
@@ -366,7 +372,9 @@ async def test_confirmation_rejects_alias_owned_by_another_company(
         async def commit(self) -> None:
             self.commits += 1
 
-        async def refresh(self, _: object) -> None:
+        async def refresh(
+            self, _: object, attribute_names: list[str] | None = None
+        ) -> None:
             return None
 
     class AliasOwnershipRepository:

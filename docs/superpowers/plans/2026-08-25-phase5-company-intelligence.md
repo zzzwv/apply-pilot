@@ -14,6 +14,7 @@
 
 - Keep virtual environments, caches, downloads and generated runtime assets beneath `E:\qiuzhao`; do not install project software on C:.
 - Read Kimi configuration only through settings; default model is exactly `kimi-k2.5`.
+- Phase 5 V1 permits one synchronous Company Intelligence request for at most 60 seconds; all provider attempts, retries and tool rounds share one absolute deadline, with a 2-second finalization reserve, then return a manual-capable partial result. The user may actively cancel the request.
 - Kimi API keys remain backend-only and are never logged, returned, committed, or sent to the browser.
 - Network candidate data remains editable and is never persisted before explicit confirmation.
 - Only `http` and `https` URLs are allowed; validate every redirect hop against SSRF rules.
@@ -121,4 +122,3 @@
 - [ ] Run `docker compose config`; run Docker build/up only when the local Docker runtime is available without moving or deleting existing data.
 - [ ] Inspect git diff and verify that no key, Prompt file, C-drive virtualenv, cache, or runtime data is tracked.
 - [ ] Report real Kimi verification as not verified unless a configured key permits a deliberately limited call.
-

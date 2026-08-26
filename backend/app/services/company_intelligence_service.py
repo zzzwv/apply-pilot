@@ -1,14 +1,19 @@
 """Local-first, non-persisting company intelligence orchestration."""
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable, Iterable
 from time import monotonic
 from typing import Any
 
 from app.company_intelligence.cache import CompanyIntelligenceCache
-from app.company_intelligence.kimi import KimiCompanySearchProvider
+from app.company_intelligence.kimi_two_stage import KimiTwoStageCompanyProvider
 from app.company_intelligence.links import HttpxLinkValidator, discover_recruitment_links
-from app.company_intelligence.providers import CompanySearchProvider, ProviderError
+from app.company_intelligence.providers import (
+    CompanySearchProvider,
+    ProviderError,
+    ProviderErrorCode,
+)
 from app.company_intelligence.schemas import (
     CandidateSource,
     CompanyCandidate,
@@ -21,6 +26,10 @@ from app.core.config import Settings, get_settings
 from app.core.redis import get_redis
 from app.models.enums import VerificationStatus
 from app.repositories.company import CompanyRepository
+
+logger = logging.getLogger(__name__)
+
+_PROVIDER_SAFETY_RESERVE_SECONDS = 2.0
 
 
 class CompanyIntelligenceService:
@@ -35,7 +44,8 @@ class CompanyIntelligenceService:
         cache: CompanyIntelligenceCache | None = None,
         link_validator: HttpxLinkValidator | None = None,
         settings: Settings | None = None,
-        overall_timeout_seconds: float = 10,
+        overall_timeout_seconds: float = 60,
+        provider_safety_reserve_seconds: float = _PROVIDER_SAFETY_RESERVE_SECONDS,
     ) -> None:
         settings = settings or get_settings()
         if repository is None:
@@ -43,7 +53,7 @@ class CompanyIntelligenceService:
                 raise ValueError("session or repository is required")
             repository = CompanyRepository(session)
         self.companies = repository
-        self.providers = list(providers or [KimiCompanySearchProvider(settings)])
+        self.providers = list(providers or [KimiTwoStageCompanyProvider(settings)])
         self.cache = cache or CompanyIntelligenceCache(
             redis=get_redis(),
             ttl_seconds=settings.company_intelligence_cache_ttl_seconds,
@@ -52,6 +62,7 @@ class CompanyIntelligenceService:
         )
         self.link_validator = link_validator if link_validator is not None else HttpxLinkValidator()
         self.overall_timeout_seconds = overall_timeout_seconds
+        self.provider_safety_reserve_seconds = provider_safety_reserve_seconds
 
     async def search_company(
         self, request: CompanyIntelligenceSearchRequest, *, actor_id: object
@@ -150,15 +161,24 @@ class CompanyIntelligenceService:
     async def _search_providers(
         self, name: str, started_at: float
     ) -> tuple[list[CompanyCandidate], list[str]]:
-        tasks = [asyncio.create_task(provider.search(name)) for provider in self.providers]
+        provider_budget = self._remaining(started_at) - self.provider_safety_reserve_seconds
+        if provider_budget <= 0:
+            return [], ["company intelligence provider budget was exhausted"]
+        provider_deadline = monotonic() + provider_budget
+        tasks = [
+            asyncio.create_task(provider.search(name, deadline=provider_deadline))
+            for provider in self.providers
+        ]
         if not tasks:
             return [], ["company intelligence provider is not configured"]
-        done, pending = await asyncio.wait(tasks, timeout=self._remaining(started_at))
+        done, pending = await asyncio.wait(tasks, timeout=provider_budget)
         warnings: list[str] = []
-        for task in pending:
-            task.cancel()
         if pending:
             await self._cancel_pending(pending, started_at)
+            logger.warning(
+                "KIMI_PROVIDER_CANCELLED_BY_SERVICE_TIMEOUT",
+                extra={"provider_task_count": len(pending)},
+            )
             warnings.append("company intelligence provider search timed out")
 
         candidates: list[CompanyCandidate] = []
@@ -166,12 +186,25 @@ class CompanyIntelligenceService:
             try:
                 response = task.result()
             except ProviderError as error:
-                warnings.append(str(error))
+                logger.warning(
+                    "company intelligence provider failure: %s diagnostic=%s",
+                    error.code,
+                    error.diagnostic,
+                )
+                warnings.append(self._safe_provider_warning(error))
             except Exception:
                 warnings.append("company intelligence provider is temporarily unavailable")
             else:
                 candidates.append(response)
         return candidates, warnings
+
+    @staticmethod
+    def _safe_provider_warning(error: ProviderError) -> str:
+        if error.code is ProviderErrorCode.RATE_LIMITED:
+            return "company intelligence provider rate limit reached"
+        if error.code is ProviderErrorCode.PROVIDER_BUDGET_EXHAUSTED:
+            return "company intelligence provider budget was exhausted"
+        return "company intelligence provider is temporarily unavailable"
 
     async def _verify(
         self, candidate: CompanyCandidate, started_at: float
@@ -338,13 +371,10 @@ class CompanyIntelligenceService:
     async def _cancel_pending(
         self, pending: set[asyncio.Task[Any]], started_at: float
     ) -> None:
+        del started_at
         for task in pending:
             task.cancel()
-            self._drain(task)
-        remaining = self._remaining(started_at)
-        if remaining <= 0:
-            return
-        await asyncio.wait(pending, timeout=remaining)
+        await asyncio.gather(*pending, return_exceptions=True)
 
     async def _acquire_lock_with_budget(self, name: str, started_at: float) -> str | None:
         remaining = self._remaining(started_at)

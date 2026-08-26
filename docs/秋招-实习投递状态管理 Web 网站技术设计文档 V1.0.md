@@ -1354,7 +1354,7 @@ V1.1 建议：
 无限循环搜索
 高 Token 消耗
 高搜索调用成本
-超过 10 秒交互预算
+超过 V1 Company Intelligence 的 60 秒同步交互预算
 ```
 
 ---
@@ -1647,7 +1647,7 @@ URL校验
 
 ## 31A.11 Enrich 并行执行
 
-为了满足 10 秒限制：
+Phase 5 V1 使用 60 秒同步总预算：
 
 ```python
 async with asyncio.TaskGroup() as tg:
@@ -1658,9 +1658,9 @@ async with asyncio.TaskGroup() as tg:
 推荐整体预算：
 
 ```text
-企业数据 API      <= 4s
-Kimi Search       <= 8s
-整体 Enrich       <= 10s
+Provider / Kimi / retry / tool round 共享 remaining deadline
+最终收尾 reserve  2s
+整体 Enrich       <= 60s，超时返回 partial；用户可主动取消联网请求
 ```
 
 两者并行，而不是：
@@ -2096,7 +2096,7 @@ DNS error
 → 才返回
 ```
 
-否则可能超过 PRD 的 10 秒要求。
+否则可能超过 PRD 的 V1 60 秒同步预算。
 
 应该：
 
@@ -2174,10 +2174,10 @@ company:fetch:bytedance
 
 # 38. 企业信息抓取超时
 
-PRD 要求：
+V1 PRD 要求：
 
 ```text
-10秒自动终止
+60 秒自动终止；超时后返回 partial，允许手动补充
 ```
 
 
@@ -2185,16 +2185,15 @@ PRD 要求：
 推荐内部拆分：
 
 ```text
-企业基础API 3s
-官网发现     3s
-招聘信息     3s
-系统预留     1s
+Stage A Web Search + tool round 共享 deadline
+Stage B Canonical Extraction 使用剩余 deadline
+系统收尾 reserve                 2s
 ```
 
 总 Timeout：
 
 ```text
-10s
+60s
 ```
 
 如果部分成功：
@@ -3173,7 +3172,7 @@ PRD：
 
 列表/图表 ≤ 0.8s
 
-企业抓取 ≤ 10s
+Phase 5 V1 企业单次同步联网获取 ≤ 60s，超时返回 partial 并允许手动补充；用户可主动取消联网请求
 
 单用户 1000+记录流畅
 ```
