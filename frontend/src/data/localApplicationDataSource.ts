@@ -36,6 +36,18 @@ function toApplication(application: LocalApplication): Application {
   };
 }
 
+export function applyLocalApplicationFilters(items: Application[], params: ApplicationListParams): Application[] {
+  let filtered = items;
+  if (params.status?.length) filtered = filtered.filter((item) => params.status!.includes(item.current_status));
+  if (params.company_nature?.length) filtered = filtered.filter((item) => item.company.nature !== null && params.company_nature!.includes(item.company.nature));
+  if (params.application_type?.length) filtered = filtered.filter((item) => params.application_type!.includes(item.application_type));
+  if (params.industry?.length) filtered = filtered.filter((item) => item.company.industry !== null && params.industry!.includes(item.company.industry));
+  if (params.company_size?.length) filtered = filtered.filter((item) => item.company.size !== null && params.company_size!.includes(item.company.size));
+  if (params.date_from) filtered = filtered.filter((item) => item.application_date >= params.date_from!);
+  if (params.date_to) filtered = filtered.filter((item) => item.application_date <= params.date_to!);
+  return filtered;
+}
+
 export class LocalApplicationDataSource {
   private readonly repository = new LocalApplicationRepository("guest");
 
@@ -44,14 +56,7 @@ export class LocalApplicationDataSource {
   }
 
   async list(params: ApplicationListParams = {}): Promise<ApplicationList> {
-    let items = (await this.repository.list({ keyword: params.keyword })).map(toApplication);
-    if (params.status?.length) items = items.filter((item) => params.status!.includes(item.current_status));
-    if (params.company_nature?.length) items = items.filter((item) => item.company.nature !== null && params.company_nature!.includes(item.company.nature));
-    if (params.application_type?.length) items = items.filter((item) => params.application_type!.includes(item.application_type));
-    if (params.industry?.length) items = items.filter((item) => item.company.industry !== null && params.industry!.includes(item.company.industry));
-    if (params.company_size?.length) items = items.filter((item) => item.company.size !== null && params.company_size!.includes(item.company.size));
-    if (params.date_from) items = items.filter((item) => item.application_date >= params.date_from!);
-    if (params.date_to) items = items.filter((item) => item.application_date <= params.date_to!);
+    let items = applyLocalApplicationFilters((await this.repository.list({ keyword: params.keyword })).map(toApplication), params);
     if (params.sort === "application_date_asc") items.sort((a, b) => a.application_date.localeCompare(b.application_date));
     else if (params.sort === "company_name_asc") items.sort((a, b) => (a.company.short_name || a.company.full_name).localeCompare(b.company.short_name || b.company.full_name));
     else items.sort((a, b) => b.application_date.localeCompare(a.application_date));
@@ -94,8 +99,10 @@ export class LocalApplicationDataSource {
     await this.repository.remove(applicationId);
   }
 
-  async dashboard(): Promise<GuestDashboard> {
-    const applications = await this.repository.list();
+  async dashboard(params: ApplicationListParams = {}): Promise<GuestDashboard> {
+    const allApplications = await this.repository.list({ keyword: params.keyword });
+    const allowedIds = new Set(applyLocalApplicationFilters(allApplications.map(toApplication), params).map((application) => application.id));
+    const applications = allApplications.filter((application) => allowedIds.has(application.local_id));
     const logs = (await Promise.all(applications.map((application) => this.repository.listStatusLogs(application.local_id)))).flat();
     return calculateDashboard(applications, logs);
   }

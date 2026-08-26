@@ -44,7 +44,7 @@ export function DashboardPage() {
   }, [keywordInput]);
   const updateFilters = (updates: Partial<DashboardFilters>) => setFilters((current) => ({ ...current, ...updates }));
   const queryOptions = { placeholderData: keepPreviousData };
-  const guestDashboard = () => guestDataSource.dashboard();
+  const guestDashboard = () => guestDataSource.dashboard(filters);
   const summary = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", "summary", filters], queryFn: () => guest ? guestDashboard().then((data) => data.summary) : getDashboardSummary(filters), ...queryOptions });
   const statuses = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", "status", filters], queryFn: () => guest ? guestDashboard().then((data) => data.statuses) : getStatusDistribution(filters), ...queryOptions });
   const industries = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", "industry", filters], queryFn: () => guest ? guestDashboard().then((data) => data.industries) : getIndustryDistribution(filters), ...queryOptions });

@@ -59,6 +59,10 @@ export function ApplicationForm({ application, guest = false, open, saving, onCl
         ...application,
         application_date: dayjs(application.application_date),
         deadline: application.deadline ? dayjs(application.deadline) : undefined,
+        local_company_name: guest ? application.company.full_name : undefined,
+        local_company_industry: guest ? application.company.industry ?? undefined : undefined,
+        local_company_nature: guest ? application.company.nature ?? undefined : undefined,
+        local_company_size: guest ? application.company.size ?? undefined : undefined,
       }
     : { application_type: "autumn_fulltime", current_status: "APPLIED", application_date: dayjs() };
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DatePicker, Empty, Input, Popconfirm, Select, Space, Table, Typography, message } from "antd";
 import dayjs from "dayjs";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 import { createApplication, deleteApplication, listApplications, toApplicationUpdate, updateApplication } from "../../api/applications";
 import { ApplicationForm } from "../../components/ApplicationForm";
@@ -43,12 +43,20 @@ const guestDataSource = new LocalApplicationDataSource();
 
 export function ApplicationsPage() {
   const queryClient = useQueryClient();
+  const location = useLocation();
   const { user, initialized } = useAuthStore();
   const guest = initialized && !user;
   const { applicationDrawerOpen, setApplicationDrawerOpen } = useUiStore();
   const [editing, setEditing] = useState<Application>();
   const [keywordInput, setKeywordInput] = useState("");
   const [params, setParams] = useState<ApplicationListParams>(initialParams);
+  const pendingEdit = (location.state as { editApplication?: Application } | null)?.editApplication;
+  useEffect(() => {
+    if (pendingEdit) {
+      setEditing(pendingEdit);
+      setApplicationDrawerOpen(true);
+    }
+  }, [pendingEdit, setApplicationDrawerOpen]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setParams((current) => ({ ...current, keyword: keywordInput.trim() || undefined, page: 1 }));

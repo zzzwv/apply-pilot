@@ -39,7 +39,7 @@ export function ApplicationDetailPage() {
   return (
     <section>
       <Space direction="vertical" size="large" style={{ width: "100%" }}>
-        <Link to="/applications">← 返回投递列表</Link>
+        <Space><Link to="/applications">← 返回投递列表</Link>{guest && <Link to="/applications" state={{ editApplication: item }}>编辑</Link>}</Space>
         {guest && <Popconfirm title="确认删除这条本地投递记录？" onConfirm={() => remove.mutate()}><Button danger>删除本地投递</Button></Popconfirm>}
         <Typography.Title level={2}>{item.job_title}</Typography.Title>
         <Card title="投递信息">
