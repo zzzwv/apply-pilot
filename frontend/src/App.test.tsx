@@ -4,7 +4,9 @@ import { BrowserRouter, MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+import { getCurrentUser } from "./api/auth";
 import { listApplications } from "./api/applications";
+import { useAuthStore } from "./store/auth";
 
 vi.mock("./api/applications", () => ({
   listApplications: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 }),
@@ -19,6 +21,12 @@ vi.mock("./api/dashboard", () => ({
   getIndustryDistribution: vi.fn().mockResolvedValue([]),
   getCompanyNatureDistribution: vi.fn().mockResolvedValue([]),
   getApplicationTrend: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("./api/auth", () => ({
+  getCurrentUser: vi.fn(),
+  login: vi.fn(),
+  register: vi.fn(),
 }));
 
 vi.mock("./pages/Dashboard", () => ({
@@ -59,6 +67,25 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByRole("heading", { name: "求职投递数据看板" })).toBeDefined());
     expect(screen.getByText("总投递")).toBeDefined();
     expect(screen.getByRole("button", { name: "刷新数据" })).toBeDefined();
+  });
+
+  it("initializes authenticated state before cloud pages issue requests", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const currentUser = getCurrentUser as ReturnType<typeof vi.fn>;
+    localStorage.setItem("job_tracker_access_token", "token");
+    currentUser.mockResolvedValue({ id: "user-a", username: "alice", email: "a@example.com" });
+    useAuthStore.setState({ user: undefined, initialized: false });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/applications"]}>
+          <App queryClient={queryClient} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(currentUser).toHaveBeenCalledTimes(1));
+    expect(useAuthStore.getState().user?.id).toBe("user-a");
   });
 
   it("debounces a keyword search and resets pagination to the first page", async () => {
