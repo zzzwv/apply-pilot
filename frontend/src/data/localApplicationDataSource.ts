@@ -1,4 +1,4 @@
-import type { Application, ApplicationList, ApplicationListParams } from "../types/application";
+import type { Application, ApplicationList, ApplicationListParams, ApplicationStatus, ApplicationStatusLog, ApplicationUpdate } from "../types/application";
 import {
   LocalApplicationRepository,
   type GuestApplicationInput,
@@ -52,5 +52,29 @@ export class LocalApplicationDataSource {
       page,
       page_size: pageSize,
     };
+  }
+
+  async update(applicationId: string, values: ApplicationUpdate): Promise<Application> {
+    return toApplication(await this.repository.update(applicationId, values));
+  }
+
+  async changeStatus(applicationId: string, status: ApplicationStatus, remark?: string): Promise<Application> {
+    return toApplication(await this.repository.changeStatus(applicationId, status, remark ?? null));
+  }
+
+  async getStatusLogs(applicationId: string): Promise<ApplicationStatusLog[]> {
+    const logs = await this.repository.listStatusLogs(applicationId);
+    return logs.map((log) => ({
+      id: log.id,
+      application_id: applicationId,
+      from_status: log.from_status,
+      to_status: log.to_status,
+      remark: log.remark,
+      changed_at: log.changed_at,
+    }));
+  }
+
+  async remove(applicationId: string): Promise<void> {
+    await this.repository.remove(applicationId);
   }
 }

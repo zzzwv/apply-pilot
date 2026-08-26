@@ -57,6 +57,8 @@ export type LocalApplicationListOptions = {
   keyword?: string;
 };
 
+export type LocalApplicationUpdate = Partial<Omit<GuestApplicationInput, "company" | "current_status">>;
+
 function createUuid(): string {
   return crypto.randomUUID();
 }
@@ -116,6 +118,28 @@ export class LocalApplicationRepository {
     const database = await getLocalDatabase();
     const logs = await database.getAllFromIndex("status_logs", "by-application", [this.namespace, applicationLocalId]);
     return logs.sort((first, second) => first.sequence - second.sequence);
+  }
+
+  async get(applicationLocalId: string): Promise<LocalApplication | undefined> {
+    const database = await getLocalDatabase();
+    return database.get("applications", storageKey(this.namespace, applicationLocalId));
+  }
+
+  async update(applicationLocalId: string, values: LocalApplicationUpdate): Promise<LocalApplication> {
+    const application = await this.get(applicationLocalId);
+    if (!application) throw new Error("Local application not found");
+    const updated: LocalApplication = { ...application, ...values, updated_at: new Date().toISOString() };
+    const database = await getLocalDatabase();
+    await database.put("applications", updated);
+    return updated;
+  }
+
+  async remove(applicationLocalId: string): Promise<void> {
+    const database = await getLocalDatabase();
+    const logs = await this.listStatusLogs(applicationLocalId);
+    const transaction = database.transaction(["applications", "status_logs"], "readwrite");
+    await transaction.objectStore("applications").delete(storageKey(this.namespace, applicationLocalId));
+    await Promise.all([...logs.map((log) => transaction.objectStore("status_logs").delete(log.storage_key)), transaction.done]);
   }
 
   async changeStatus(
