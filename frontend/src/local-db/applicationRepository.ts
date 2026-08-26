@@ -39,6 +39,7 @@ export type LocalStatusLog = {
   id: string;
   namespace: string;
   application_local_id: string;
+  sequence: number;
   from_status: ApplicationStatus | null;
   to_status: ApplicationStatus;
   remark: string | null;
@@ -50,6 +51,10 @@ export type SyncMetadata = {
   namespace: string;
   dismissed_at?: string;
   imported_at?: string;
+};
+
+export type LocalApplicationListOptions = {
+  keyword?: string;
 };
 
 function createUuid(): string {
@@ -81,6 +86,7 @@ export class LocalApplicationRepository {
       storage_key: storageKey(this.namespace, logId),
       namespace: this.namespace,
       application_local_id: localId,
+      sequence: 0,
       from_status: null,
       to_status: application.current_status,
       remark: null,
@@ -91,14 +97,57 @@ export class LocalApplicationRepository {
     return application;
   }
 
-  async list(): Promise<LocalApplication[]> {
+  async list(options: LocalApplicationListOptions = {}): Promise<LocalApplication[]> {
     const database = await getLocalDatabase();
-    return database.getAllFromIndex("applications", "by-namespace", this.namespace);
+    const applications = await database.getAllFromIndex("applications", "by-namespace", this.namespace);
+    const keyword = options.keyword?.trim().toLocaleLowerCase();
+    if (!keyword) return applications;
+    return applications.filter((application) => [
+      application.company.full_name,
+      application.company.short_name,
+      application.company.industry,
+      application.company.nature,
+      application.job_title,
+      application.note,
+    ].some((value) => value?.toLocaleLowerCase().includes(keyword)));
   }
 
   async listStatusLogs(applicationLocalId: string): Promise<LocalStatusLog[]> {
     const database = await getLocalDatabase();
-    return database.getAllFromIndex("status_logs", "by-application", [this.namespace, applicationLocalId]);
+    const logs = await database.getAllFromIndex("status_logs", "by-application", [this.namespace, applicationLocalId]);
+    return logs.sort((first, second) => first.sequence - second.sequence);
+  }
+
+  async changeStatus(
+    applicationLocalId: string,
+    status: ApplicationStatus,
+    remark: string | null = null,
+  ): Promise<LocalApplication> {
+    const database = await getLocalDatabase();
+    const key = storageKey(this.namespace, applicationLocalId);
+    const application = await database.get("applications", key);
+    if (!application) throw new Error("Local application not found");
+    if (application.current_status === status) return application;
+
+    const now = new Date().toISOString();
+    const previousStatus = application.current_status;
+    const existingLogs = await this.listStatusLogs(applicationLocalId);
+    const updated: LocalApplication = { ...application, current_status: status, updated_at: now };
+    const logId = createUuid();
+    const log: LocalStatusLog = {
+      id: logId,
+      storage_key: storageKey(this.namespace, logId),
+      namespace: this.namespace,
+      application_local_id: applicationLocalId,
+      sequence: existingLogs.length,
+      from_status: previousStatus,
+      to_status: status,
+      remark,
+      changed_at: now,
+    };
+    const transaction = database.transaction(["applications", "status_logs"], "readwrite");
+    await Promise.all([transaction.objectStore("applications").put(updated), transaction.objectStore("status_logs").put(log), transaction.done]);
+    return updated;
   }
 }
 
