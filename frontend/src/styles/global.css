@@ -846,6 +846,34 @@ textarea {
     gap: var(--ap-space-1) !important;
   }
 
+  .applypilot-header__auth {
+    min-width: 0;
+    max-width: min(62%, calc(100% - 7.5rem));
+  }
+
+  .applypilot-header__auth > .ant-space:has(> .ant-space-item > .ant-typography) {
+    display: flex;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .applypilot-header__auth > .ant-space:has(> .ant-space-item > .ant-typography) > .ant-space-item:first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .applypilot-header__auth > .ant-space:has(> .ant-space-item > .ant-typography) > .ant-space-item:first-child .ant-typography {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .applypilot-header__auth > .ant-space:has(> .ant-space-item > .ant-typography) > .ant-space-item:last-child {
+    flex: none;
+  }
+
   .applypilot-content {
     padding: var(--ap-space-3);
   }
