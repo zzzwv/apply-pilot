@@ -31,7 +31,9 @@ class JobApplication(TimestampMixin, Base):
     deadline: Mapped[date | None] = mapped_column(Date)
     requirements: Mapped[str | None] = mapped_column(Text)
     note: Mapped[str | None] = mapped_column(Text)
-    client_sync_id: Mapped[uuid.UUID | None] = mapped_column(index=True, nullable=True)
+    client_sync_id: Mapped[uuid.UUID | None] = mapped_column(
+        index=True, nullable=True
+    )
     current_status: Mapped[ApplicationStatus] = mapped_column(index=True, default=ApplicationStatus.NOT_APPLIED, nullable=False)
 
     user: Mapped["User"] = relationship(back_populates="applications")

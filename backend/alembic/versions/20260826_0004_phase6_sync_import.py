@@ -1,6 +1,7 @@
 """Add idempotent client sync identity."""
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "20260826_0004"
