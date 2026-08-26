@@ -188,3 +188,42 @@ def test_second_authenticated_session_sees_refetched_cloud_data(client: TestClie
     assert created.status_code == 200
     assert refetched.status_code == 200
     assert refetched.json()["data"]["total"] == 1
+
+
+def test_import_reuses_matching_company_and_preserves_status_history(client: TestClient) -> None:
+    headers = _register_and_headers(client)
+    first = _item(str(uuid4()))
+    first["current_status"] = "FIRST_INTERVIEW"
+    first["status_logs"].append(
+        {
+            "from_status": "APPLIED",
+            "to_status": "FIRST_INTERVIEW",
+            "remark": "resume passed",
+            "changed_at": "2026-08-27T00:00:00Z",
+        }
+    )
+    second = _item(str(uuid4()))
+
+    imported_first = client.post(
+        "/api/v1/sync/import-applications",
+        headers=headers,
+        json={"applications": [first]},
+    )
+    imported_second = client.post(
+        "/api/v1/sync/import-applications",
+        headers=headers,
+        json={"applications": [second]},
+    )
+    first_id = imported_first.json()["data"]["mappings"][0]["cloud_application_id"]
+    applications = client.get("/api/v1/applications", headers=headers).json()["data"]["items"]
+    status_logs = client.get(
+        f"/api/v1/applications/{first_id}/status-logs", headers=headers
+    ).json()["data"]["items"]
+
+    assert imported_first.json()["data"]["imported"] == 1
+    assert imported_second.json()["data"]["imported"] == 1
+    assert len({application["company_id"] for application in applications}) == 1
+    assert [(log["from_status"], log["to_status"], log["remark"]) for log in status_logs] == [
+        (None, "APPLIED", None),
+        ("APPLIED", "FIRST_INTERVIEW", "resume passed"),
+    ]
