@@ -73,4 +73,40 @@ describe("LocalApplicationDataSource", () => {
     expect(filtered.trend).toEqual([{ date: "2026-08-20", count: 1 }]);
     expect(restored.summary.total).toBe(2);
   });
+
+  it("keeps the 1,000-record guest list, filters, and dashboard usable through IndexedDB", async () => {
+    const source = new LocalApplicationDataSource();
+    const start = performance.now();
+    const records = Array.from({ length: 1000 }, (_, index) => source.create({
+      company: {
+        full_name: `Performance Company ${index}`,
+        short_name: null,
+        industry: index % 2 === 0 ? "AI" : "Web",
+        nature: index % 3 === 0 ? "PRIVATE" : "STATE_OWNED",
+        size: index % 2 === 0 ? "200-500" : "1000-5000",
+      },
+      job_title: `Performance Engineer ${index}`,
+      application_type: index % 2 === 0 ? "autumn_fulltime" : "summer_internship",
+      application_date: `2026-08-${String((index % 28) + 1).padStart(2, "0")}`,
+      channel: "benchmark",
+      resume_version: null,
+      salary: null,
+      city: null,
+      education_requirement: null,
+      deadline: null,
+      requirements: null,
+      note: `phase6-local-benchmark-${index}`,
+      current_status: index % 2 === 0 ? "APPLIED" : "FIRST_INTERVIEW",
+    }));
+    await Promise.all(records);
+
+    const list = await source.list({ keyword: "phase6-local-benchmark", page: 1, page_size: 20 });
+    const filtered = await source.list({ industry: ["AI"], application_type: ["autumn_fulltime"] });
+    const dashboard = await source.dashboard({ industry: ["AI"] });
+
+    expect(list.total).toBe(1000);
+    expect(filtered.total).toBe(500);
+    expect(dashboard.summary.total).toBe(500);
+    expect(performance.now() - start).toBeLessThan(15_000);
+  }, 20_000);
 });

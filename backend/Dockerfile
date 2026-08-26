@@ -4,6 +4,7 @@ ARG SKIP_DEPENDENCY_INSTALL=false
 WORKDIR /app
 COPY pyproject.toml ./
 COPY app ./app
+COPY scripts ./scripts
 COPY alembic.ini ./
 COPY alembic ./alembic
 RUN if [ "$SKIP_DEPENDENCY_INSTALL" != "true" ]; then pip install --no-cache-dir .; fi
