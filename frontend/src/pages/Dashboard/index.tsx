@@ -14,6 +14,10 @@ import { DashboardChart } from "../../components/DashboardChart";
 import { applicationTypeLabels, statusLabels, type ApplicationStatus, type ApplicationType } from "../../types/application";
 import type { DashboardFilters, TrendGranularity } from "../../types/dashboard";
 import { companyNatureOption, industryDistributionOption, statusDistributionOption, trendOption } from "./chartOptions";
+import { useAuthStore } from "../../store/auth";
+import { LocalApplicationDataSource } from "../../data/localApplicationDataSource";
+
+const guestDataSource = new LocalApplicationDataSource();
 
 const initialFilters: DashboardFilters = {};
 const natureOptions = [["STATE_OWNED", "国企"], ["CENTRAL_OWNED", "央企"], ["PRIVATE", "私企"], ["FOREIGN", "外企"], ["JOINT_VENTURE", "合资"], ["STARTUP", "初创"]];
@@ -29,6 +33,8 @@ function ChartCard({ title, error, children }: { title: string; error: boolean; 
 }
 
 export function DashboardPage() {
+  const { user, initialized } = useAuthStore();
+  const guest = initialized && !user;
   const [keywordInput, setKeywordInput] = useState("");
   const [filters, setFilters] = useState<DashboardFilters>(initialFilters);
   const [granularity, setGranularity] = useState<TrendGranularity>("day");
@@ -38,11 +44,12 @@ export function DashboardPage() {
   }, [keywordInput]);
   const updateFilters = (updates: Partial<DashboardFilters>) => setFilters((current) => ({ ...current, ...updates }));
   const queryOptions = { placeholderData: keepPreviousData };
-  const summary = useQuery({ queryKey: ["dashboard", "summary", filters], queryFn: () => getDashboardSummary(filters), ...queryOptions });
-  const statuses = useQuery({ queryKey: ["dashboard", "status", filters], queryFn: () => getStatusDistribution(filters), ...queryOptions });
-  const industries = useQuery({ queryKey: ["dashboard", "industry", filters], queryFn: () => getIndustryDistribution(filters), ...queryOptions });
-  const natures = useQuery({ queryKey: ["dashboard", "company-nature", filters], queryFn: () => getCompanyNatureDistribution(filters), ...queryOptions });
-  const trend = useQuery({ queryKey: ["dashboard", "trend", filters, granularity], queryFn: () => getApplicationTrend(filters, granularity), ...queryOptions });
+  const guestDashboard = () => guestDataSource.dashboard();
+  const summary = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", "summary", filters], queryFn: () => guest ? guestDashboard().then((data) => data.summary) : getDashboardSummary(filters), ...queryOptions });
+  const statuses = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", "status", filters], queryFn: () => guest ? guestDashboard().then((data) => data.statuses) : getStatusDistribution(filters), ...queryOptions });
+  const industries = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", "industry", filters], queryFn: () => guest ? guestDashboard().then((data) => data.industries) : getIndustryDistribution(filters), ...queryOptions });
+  const natures = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", "company-nature", filters], queryFn: () => guest ? guestDashboard().then((data) => data.natures) : getCompanyNatureDistribution(filters), ...queryOptions });
+  const trend = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", "trend", filters, granularity], queryFn: () => guest ? guestDashboard().then((data) => data.trend) : getApplicationTrend(filters, granularity), ...queryOptions });
   const refetchAll = () => void Promise.all([summary.refetch(), statuses.refetch(), industries.refetch(), natures.refetch(), trend.refetch()]);
   const hasFilters = Object.values(filters).some((value) => Array.isArray(value) ? value.length : Boolean(value));
   const charts = useMemo(() => ({

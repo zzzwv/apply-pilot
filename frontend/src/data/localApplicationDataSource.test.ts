@@ -52,4 +52,13 @@ describe("LocalApplicationDataSource", () => {
     await source.remove(created.id);
     expect((await source.list()).total).toBe(0);
   });
+
+  it("applies Phase 3 guest filters, sorting, and pagination", async () => {
+    const source = new LocalApplicationDataSource();
+    for (const [title, status, date] of [["Z role", "APPLIED", "2026-08-20"], ["A role", "FIRST_INTERVIEW", "2026-08-21"], ["B role", "APPLIED", "2026-08-22"]] as const) {
+      await source.create({ company: { full_name: title, short_name: null, industry: "AI", nature: "PRIVATE", size: "200-500" }, job_title: title, application_type: "autumn_fulltime", application_date: date, channel: "official", resume_version: null, salary: null, city: null, education_requirement: null, deadline: null, requirements: null, note: null, current_status: status });
+    }
+    const filtered = await source.list({ status: ["APPLIED"], company_nature: ["PRIVATE"], industry: ["AI"], sort: "application_date_asc", page: 2, page_size: 1 });
+    expect(filtered).toMatchObject({ total: 2, page: 2, items: [{ job_title: "B role" }] });
+  });
 });

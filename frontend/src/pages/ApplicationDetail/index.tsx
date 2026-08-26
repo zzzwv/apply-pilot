@@ -1,26 +1,36 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Descriptions, Input, Select, Space, Timeline, Typography, message } from "antd";
+import { Button, Card, Descriptions, Input, Popconfirm, Select, Space, Timeline, Typography, message } from "antd";
 import { Link, useParams } from "react-router-dom";
 
 import { changeApplicationStatus, getApplication, getApplicationStatusLogs } from "../../api/applications";
 import { StatusTag } from "../../components/StatusTag";
 import { applicationTypeLabels, statusLabels, type ApplicationStatus } from "../../types/application";
+import { useAuthStore } from "../../store/auth";
+import { LocalApplicationDataSource } from "../../data/localApplicationDataSource";
+
+const guestDataSource = new LocalApplicationDataSource();
 
 export function ApplicationDetailPage() {
   const { id = "" } = useParams();
   const queryClient = useQueryClient();
+  const { user, initialized } = useAuthStore();
+  const guest = initialized && !user;
   const [status, setStatus] = useState<ApplicationStatus>();
   const [remark, setRemark] = useState("");
-  const application = useQuery({ queryKey: ["application", id], queryFn: () => getApplication(id), enabled: Boolean(id) });
-  const logs = useQuery({ queryKey: ["application-status-logs", id], queryFn: () => getApplicationStatusLogs(id), enabled: Boolean(id) });
+  const application = useQuery({ queryKey: ["application", guest ? "guest" : "cloud", id], queryFn: () => guest ? guestDataSource.get(id) : getApplication(id), enabled: Boolean(id) });
+  const logs = useQuery({ queryKey: ["application-status-logs", guest ? "guest" : "cloud", id], queryFn: () => guest ? guestDataSource.getStatusLogs(id) : getApplicationStatusLogs(id), enabled: Boolean(id) });
   const changeStatus = useMutation({
-    mutationFn: () => changeApplicationStatus(id, status!, remark),
+    mutationFn: () => guest ? guestDataSource.changeStatus(id, status!, remark) : changeApplicationStatus(id, status!, remark),
     onSuccess: () => Promise.all([
       queryClient.invalidateQueries({ queryKey: ["application", id] }),
       queryClient.invalidateQueries({ queryKey: ["application-status-logs", id] }),
       queryClient.invalidateQueries({ queryKey: ["applications"] }),
     ]),
+  });
+  const remove = useMutation({
+    mutationFn: () => guest ? guestDataSource.remove(id) : Promise.reject(new Error("Delete from the list")),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["applications"] }); window.location.assign("/applications"); },
   });
 
   if (!application.data) return <Typography.Paragraph>{application.isLoading ? "正在加载…" : "未找到投递记录"}</Typography.Paragraph>;
@@ -30,6 +40,7 @@ export function ApplicationDetailPage() {
     <section>
       <Space direction="vertical" size="large" style={{ width: "100%" }}>
         <Link to="/applications">← 返回投递列表</Link>
+        {guest && <Popconfirm title="确认删除这条本地投递记录？" onConfirm={() => remove.mutate()}><Button danger>删除本地投递</Button></Popconfirm>}
         <Typography.Title level={2}>{item.job_title}</Typography.Title>
         <Card title="投递信息">
           <Descriptions column={1}>
