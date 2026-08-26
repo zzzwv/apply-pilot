@@ -32,6 +32,7 @@ export type LocalApplication = GuestApplicationInput & {
   cloud_id?: string;
   created_at: string;
   updated_at: string;
+  cached_at?: string;
 };
 
 export type LocalStatusLog = {

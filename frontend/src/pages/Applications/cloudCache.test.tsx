@@ -1,5 +1,7 @@
 import "fake-indexeddb/auto";
 
+import { AxiosError } from "axios";
+import { message } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -137,5 +139,27 @@ describe("cloud application cache side effects", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
     await waitFor(async () => expect(await new CloudApplicationCache("user-a").getApplication("existing")).toBeUndefined());
+  });
+
+  it("blocks offline create, update, and delete without changing confirmed cache data", async () => {
+    const offline = new AxiosError("offline", "ERR_NETWORK");
+    const error = vi.spyOn(message, "error").mockImplementation((() => undefined) as never);
+    mockedCreate.mockRejectedValueOnce(offline);
+    mockedUpdate.mockRejectedValueOnce(offline);
+    mockedDelete.mockRejectedValueOnce(offline);
+    renderPage();
+    await screen.findByText("Engineer");
+    await waitFor(async () => expect(await new CloudApplicationCache("user-a").getApplication("existing")).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: "新增投递" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交新增" }));
+    await waitFor(() => expect(error).toHaveBeenCalledWith("当前网络不可用，请恢复网络后再修改"));
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    fireEvent.click(screen.getByRole("button", { name: "提交编辑" }));
+    await waitFor(() => expect(error).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    await waitFor(() => expect(error).toHaveBeenCalledTimes(3));
+    expect(await new CloudApplicationCache("user-a").getApplication("existing")).toMatchObject({ job_title: "Engineer" });
+    error.mockRestore();
   });
 });

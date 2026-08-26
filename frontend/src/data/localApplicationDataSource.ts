@@ -6,10 +6,10 @@ import {
 } from "../local-db/applicationRepository";
 import { calculateDashboard, type GuestDashboard } from "../dashboard/metrics";
 
-function toApplication(application: LocalApplication): Application {
+export function toApplication(application: LocalApplication, userId = "guest"): Application {
   return {
     id: application.local_id,
-    user_id: "guest",
+    user_id: userId,
     company_id: application.local_id,
     job_title: application.job_title,
     application_type: application.application_type,
@@ -49,14 +49,18 @@ export function applyLocalApplicationFilters(items: Application[], params: Appli
 }
 
 export class LocalApplicationDataSource {
-  private readonly repository = new LocalApplicationRepository("guest");
+  private readonly repository: LocalApplicationRepository;
+
+  constructor(private readonly namespace = "guest", private readonly userId = "guest") {
+    this.repository = new LocalApplicationRepository(namespace);
+  }
 
   async create(input: GuestApplicationInput): Promise<Application> {
-    return toApplication(await this.repository.create(input));
+    return toApplication(await this.repository.create(input), this.userId);
   }
 
   async list(params: ApplicationListParams = {}): Promise<ApplicationList> {
-    let items = applyLocalApplicationFilters((await this.repository.list({ keyword: params.keyword })).map(toApplication), params);
+    let items = applyLocalApplicationFilters((await this.repository.list({ keyword: params.keyword })).map((application) => toApplication(application, this.userId)), params);
     if (params.sort === "application_date_asc") items.sort((a, b) => a.application_date.localeCompare(b.application_date));
     else if (params.sort === "company_name_asc") items.sort((a, b) => (a.company.short_name || a.company.full_name).localeCompare(b.company.short_name || b.company.full_name));
     else items.sort((a, b) => b.application_date.localeCompare(a.application_date));
@@ -71,16 +75,16 @@ export class LocalApplicationDataSource {
   }
 
   async update(applicationId: string, values: ApplicationUpdate): Promise<Application> {
-    return toApplication(await this.repository.update(applicationId, values));
+    return toApplication(await this.repository.update(applicationId, values), this.userId);
   }
 
   async get(applicationId: string): Promise<Application | undefined> {
     const application = await this.repository.get(applicationId);
-    return application ? toApplication(application) : undefined;
+    return application ? toApplication(application, this.userId) : undefined;
   }
 
   async changeStatus(applicationId: string, status: ApplicationStatus, remark?: string): Promise<Application> {
-    return toApplication(await this.repository.changeStatus(applicationId, status, remark ?? null));
+    return toApplication(await this.repository.changeStatus(applicationId, status, remark ?? null), this.userId);
   }
 
   async getStatusLogs(applicationId: string): Promise<ApplicationStatusLog[]> {
@@ -101,7 +105,7 @@ export class LocalApplicationDataSource {
 
   async dashboard(params: ApplicationListParams = {}): Promise<GuestDashboard> {
     const allApplications = await this.repository.list({ keyword: params.keyword });
-    const allowedIds = new Set(applyLocalApplicationFilters(allApplications.map(toApplication), params).map((application) => application.id));
+    const allowedIds = new Set(applyLocalApplicationFilters(allApplications.map((application) => toApplication(application, this.userId)), params).map((application) => application.id));
     const applications = allApplications.filter((application) => allowedIds.has(application.local_id));
     const logs = (await Promise.all(applications.map((application) => this.repository.listStatusLogs(application.local_id)))).flat();
     return calculateDashboard(applications, logs);

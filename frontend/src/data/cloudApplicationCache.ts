@@ -30,6 +30,7 @@ function toCachedApplication(application: Application): Omit<LocalApplication, "
     current_status: application.current_status,
     created_at: application.created_at,
     updated_at: application.updated_at,
+    cached_at: new Date().toISOString(),
   };
 }
 
@@ -61,6 +62,13 @@ export class CloudApplicationCache {
 
   async getApplication(applicationId: string): Promise<LocalApplication | undefined> {
     return this.repository.get(applicationId);
+  }
+
+  async getLatestCachedAt(applicationIds?: string[]): Promise<string | undefined> {
+    const applications = applicationIds
+      ? (await Promise.all(applicationIds.map((applicationId) => this.repository.get(applicationId)))).filter((application): application is LocalApplication => Boolean(application))
+      : await this.repository.list();
+    return applications.reduce<string | undefined>((latest, application) => !latest || (application.cached_at ?? "") > latest ? application.cached_at : latest, undefined);
   }
 
   async replaceStatusLogs(applicationId: string, logs: ApplicationStatusLog[]): Promise<void> {

@@ -1,14 +1,15 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Descriptions, Input, Popconfirm, Select, Space, Timeline, Typography, message } from "antd";
+import { Alert, Button, Card, Descriptions, Input, Popconfirm, Select, Space, Timeline, Typography, message } from "antd";
 import { Link, useParams } from "react-router-dom";
 
-import { changeApplicationStatus, getApplication, getApplicationStatusLogs } from "../../api/applications";
+import { changeApplicationStatus } from "../../api/applications";
 import { StatusTag } from "../../components/StatusTag";
 import { applicationTypeLabels, statusLabels, type ApplicationStatus } from "../../types/application";
 import { useAuthStore } from "../../store/auth";
 import { LocalApplicationDataSource } from "../../data/localApplicationDataSource";
 import { CloudApplicationCache, writeCloudCacheSafely } from "../../data/cloudApplicationCache";
+import { CloudApplicationDataSource, isRecoverableReadFailure } from "../../data/cloudApplicationDataSource";
 
 const guestDataSource = new LocalApplicationDataSource();
 
@@ -18,6 +19,7 @@ export function ApplicationDetailPage() {
   const { user, initialized } = useAuthStore();
   const guest = initialized && !user;
   const cloudCache = useMemo(() => user ? new CloudApplicationCache(user.id) : undefined, [user?.id]);
+  const cloudDataSource = useMemo(() => user ? new CloudApplicationDataSource(user.id) : undefined, [user?.id]);
   const [status, setStatus] = useState<ApplicationStatus>();
   const [remark, setRemark] = useState("");
   const applicationKey = ["application", guest ? "guest" : "cloud", user?.id, id];
@@ -25,20 +27,16 @@ export function ApplicationDetailPage() {
   const application = useQuery({
     queryKey: applicationKey,
     queryFn: async () => {
-      if (guest) return guestDataSource.get(id);
-      const response = await getApplication(id);
-      if (cloudCache) void writeCloudCacheSafely(() => cloudCache.upsertApplication(response));
-      return response;
+      if (guest) return { data: await guestDataSource.get(id), source: "cloud" as const, stale: false };
+      return cloudDataSource!.get(id);
     },
     enabled: initialized && Boolean(id),
   });
   const logs = useQuery({
     queryKey: logsKey,
     queryFn: async () => {
-      if (guest) return guestDataSource.getStatusLogs(id);
-      const response = await getApplicationStatusLogs(id);
-      if (cloudCache) void writeCloudCacheSafely(() => cloudCache.replaceStatusLogs(id, response));
-      return response;
+      if (guest) return { data: await guestDataSource.getStatusLogs(id), source: "cloud" as const, stale: false };
+      return cloudDataSource!.getStatusLogs(id);
     },
     enabled: initialized && Boolean(id),
   });
@@ -61,12 +59,16 @@ export function ApplicationDetailPage() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["applications"] }); window.location.assign("/applications"); },
   });
 
-  if (!application.data) return <Typography.Paragraph>{application.isLoading ? "正在加载…" : "未找到投递记录"}</Typography.Paragraph>;
-  const item = application.data;
+  if (application.isError) return <Typography.Paragraph>读取投递记录失败</Typography.Paragraph>;
+  if (!application.data?.data) return <Typography.Paragraph>{application.isLoading ? "正在加载…" : "未找到投递记录"}</Typography.Paragraph>;
+  const item = application.data.data;
+  const stale = application.data.stale || logs.data?.stale;
+  const cachedAt = application.data.cached_at ?? logs.data?.cached_at;
 
   return (
     <section>
       <Space direction="vertical" size="large" style={{ width: "100%" }}>
+        {stale && <Alert type="warning" showIcon message={cachedAt ? `当前网络不可用，正在显示 ${new Date(cachedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} 缓存的数据。` : "当前网络不可用，正在显示最近缓存的数据。"} />}
         <Space><Link to="/applications">← 返回投递列表</Link>{guest && <Link to="/applications" state={{ editApplication: item }}>编辑</Link>}</Space>
         {guest && <Popconfirm title="确认删除这条本地投递记录？" onConfirm={() => remove.mutate()}><Button danger>删除本地投递</Button></Popconfirm>}
         <Typography.Title level={2}>{item.job_title}</Typography.Title>
@@ -84,11 +86,11 @@ export function ApplicationDetailPage() {
           <Space wrap>
             <Select placeholder="选择新状态" value={status} onChange={setStatus} style={{ minWidth: 180 }} options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))} />
             <Input placeholder="状态备注（可选）" value={remark} onChange={(event) => setRemark(event.target.value)} style={{ width: 240 }} />
-            <Button type="primary" disabled={!status} loading={changeStatus.isPending} onClick={() => changeStatus.mutate(undefined, { onSuccess: () => { message.success("状态已更新"); setRemark(""); } })}>更新状态</Button>
+            <Button type="primary" disabled={!status} loading={changeStatus.isPending} onClick={() => changeStatus.mutate(undefined, { onSuccess: () => { message.success("状态已更新"); setRemark(""); }, onError: (error) => message.error(isRecoverableReadFailure(error) ? "当前网络不可用，请恢复网络后再修改" : "状态更新失败，请检查登录状态") })}>更新状态</Button>
           </Space>
         </Card>
         <Card title="状态历史">
-          <Timeline items={(logs.data ?? []).map((log) => ({ children: <><StatusTag status={log.to_status} /> <span>{new Date(log.changed_at).toLocaleString()}</span>{log.remark && <Typography.Paragraph>{log.remark}</Typography.Paragraph>}</> }))} />
+          <Timeline items={(logs.data?.data ?? []).map((log) => ({ children: <><StatusTag status={log.to_status} /> <span>{new Date(log.changed_at).toLocaleString()}</span>{log.remark && <Typography.Paragraph>{log.remark}</Typography.Paragraph>}</> }))} />
         </Card>
       </Space>
     </section>

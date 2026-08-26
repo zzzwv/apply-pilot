@@ -1,5 +1,7 @@
 import "fake-indexeddb/auto";
 
+import { AxiosError } from "axios";
+import { message } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -71,5 +73,21 @@ describe("cloud application detail cache side effects", () => {
     fireEvent.click(screen.getByRole("button", { name: "更新状态" }));
 
     await waitFor(async () => expect(await new CloudApplicationCache("user-a").getApplication("application-a")).toMatchObject({ current_status: "FIRST_INTERVIEW" }));
+  });
+
+  it("blocks an offline status update without replacing the confirmed cache", async () => {
+    const error = vi.spyOn(message, "error").mockImplementation((() => undefined) as never);
+    mockedChangeStatus.mockRejectedValueOnce(new AxiosError("offline", "ERR_NETWORK"));
+    renderPage();
+    await screen.findByText("Engineer");
+    await waitFor(async () => expect(await new CloudApplicationCache("user-a").getApplication("application-a")).toMatchObject({ current_status: "APPLIED" }));
+
+    fireEvent.mouseDown(screen.getByRole("combobox"));
+    fireEvent.click(await screen.findByText("一面"));
+    fireEvent.click(screen.getByRole("button", { name: "更新状态" }));
+
+    await waitFor(() => expect(error).toHaveBeenCalledWith("当前网络不可用，请恢复网络后再修改"));
+    expect(await new CloudApplicationCache("user-a").getApplication("application-a")).toMatchObject({ current_status: "APPLIED" });
+    error.mockRestore();
   });
 });

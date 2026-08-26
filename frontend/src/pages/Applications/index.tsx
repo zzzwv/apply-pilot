@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, DatePicker, Empty, Input, Popconfirm, Select, Space, Table, Typography, message } from "antd";
+import { Alert, Button, DatePicker, Empty, Input, Popconfirm, Select, Space, Table, Typography, message } from "antd";
 import dayjs from "dayjs";
 import { Link, useLocation } from "react-router-dom";
 
@@ -11,6 +11,7 @@ import { useUiStore } from "../../store/ui";
 import { useAuthStore } from "../../store/auth";
 import { LocalApplicationDataSource } from "../../data/localApplicationDataSource";
 import { CloudApplicationCache, writeCloudCacheSafely } from "../../data/cloudApplicationCache";
+import { CloudApplicationDataSource, isRecoverableReadFailure } from "../../data/cloudApplicationDataSource";
 import type { GuestApplicationInput } from "../../local-db/applicationRepository";
 import {
   applicationTypeLabels,
@@ -48,6 +49,7 @@ export function ApplicationsPage() {
   const { user, initialized } = useAuthStore();
   const guest = initialized && !user;
   const cloudCache = useMemo(() => user ? new CloudApplicationCache(user.id) : undefined, [user?.id]);
+  const cloudDataSource = useMemo(() => user ? new CloudApplicationDataSource(user.id) : undefined, [user?.id]);
   const { applicationDrawerOpen, setApplicationDrawerOpen } = useUiStore();
   const [editing, setEditing] = useState<Application>();
   const [keywordInput, setKeywordInput] = useState("");
@@ -68,10 +70,8 @@ export function ApplicationsPage() {
   const applications = useQuery({
     queryKey: [...applicationsKey, guest ? "guest" : "cloud", user?.id, params],
     queryFn: async () => {
-      if (guest) return guestDataSource.list(params);
-      const response = await listApplications(params);
-      if (cloudCache) void writeCloudCacheSafely(() => cloudCache.upsertApplications(response.items));
-      return response;
+      if (guest) return { data: await guestDataSource.list(params), source: "cloud" as const, stale: false };
+      return cloudDataSource!.list(params);
     },
     enabled: initialized,
     placeholderData: guest ? keepPreviousData : undefined,
@@ -106,8 +106,9 @@ export function ApplicationsPage() {
       return response;
     },
     onSuccess: () => invalidateAfterCloudMutation(),
+    onError: (error) => message.error(isRecoverableReadFailure(error) ? "当前网络不可用，请恢复网络后再修改" : "删除失败，请检查登录状态"),
   });
-  const items = applications.data?.items ?? [];
+  const items = applications.data?.data.items ?? [];
   const updateFilters = (updates: Partial<ApplicationListParams>) => {
     setParams((current) => ({ ...current, ...updates, page: 1 }));
   };
@@ -132,8 +133,8 @@ export function ApplicationsPage() {
       else await createMutation.mutateAsync(payload);
       message.success("投递记录已保存");
       closeDrawer();
-    } catch {
-      message.error("保存失败，请检查输入或登录状态");
+    } catch (error) {
+      message.error(isRecoverableReadFailure(error) ? "当前网络不可用，请恢复网络后再修改" : "保存失败，请检查输入或登录状态");
     }
   };
 
@@ -162,6 +163,7 @@ export function ApplicationsPage() {
         <Typography.Title level={2}>投递记录</Typography.Title>
         <Button type="primary" onClick={() => setApplicationDrawerOpen(true)}>新增投递</Button>
       </Space>
+      {applications.data?.stale && <Alert type="warning" showIcon message={applications.data.cached_at ? `当前网络不可用，正在显示 ${new Date(applications.data.cached_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} 缓存的数据。` : "当前网络不可用，正在显示最近缓存的数据。"} style={{ marginBottom: 16 }} />}
       <Space wrap style={{ marginBottom: 16 }}>
         <Input
           allowClear
@@ -245,7 +247,7 @@ export function ApplicationsPage() {
           pagination={{
             current: params.page,
             pageSize: params.page_size,
-            total: applications.data?.total,
+            total: applications.data?.data.total,
             showSizeChanger: true,
             onChange: (page, pageSize) => setParams((current) => ({ ...current, page, page_size: pageSize })),
           }}
