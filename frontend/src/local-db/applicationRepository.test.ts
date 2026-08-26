@@ -76,4 +76,35 @@ describe("LocalApplicationRepository", () => {
       { from_status: "APPLIED", to_status: "FIRST_INTERVIEW", remark: "passed resume" },
     ]);
   });
+
+  it("persists user-scoped cloud mappings and removes only mapped guest applications with their logs", async () => {
+    const repository = new LocalApplicationRepository("guest");
+    const first = await repository.create(guestInput);
+    const second = await repository.create({ ...guestInput, job_title: "Frontend Engineer" });
+    await repository.changeStatus(first.local_id, "FIRST_INTERVIEW", "passed resume");
+
+    await repository.saveCloudMappings("user-a", [{ client_sync_id: first.local_id, cloud_application_id: "cloud-a" }]);
+    await repository.removeMany([first.local_id]);
+
+    expect(await repository.count()).toBe(1);
+    expect(await repository.get(first.local_id)).toBeUndefined();
+    expect(await repository.listStatusLogs(first.local_id)).toEqual([]);
+    expect(await repository.get(second.local_id)).toMatchObject({ local_id: second.local_id });
+    expect(await repository.getCloudMapping("user-a", first.local_id)).toBe("cloud-a");
+    expect(await repository.getCloudMapping("user-b", first.local_id)).toBeUndefined();
+  });
+
+  it("returns each guest application with its complete local status history for import", async () => {
+    const repository = new LocalApplicationRepository("guest");
+    const application = await repository.create(guestInput);
+    await repository.changeStatus(application.local_id, "FIRST_INTERVIEW", "passed resume");
+
+    expect(await repository.listForImport()).toMatchObject([{
+      application: { local_id: application.local_id },
+      status_logs: [
+        { from_status: null, to_status: "APPLIED" },
+        { from_status: "APPLIED", to_status: "FIRST_INTERVIEW", remark: "passed resume" },
+      ],
+    }]);
+  });
 });

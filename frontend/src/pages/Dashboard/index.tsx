@@ -45,11 +45,11 @@ export function DashboardPage() {
   const updateFilters = (updates: Partial<DashboardFilters>) => setFilters((current) => ({ ...current, ...updates }));
   const queryOptions = { placeholderData: keepPreviousData };
   const guestDashboard = () => guestDataSource.dashboard(filters);
-  const summary = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", "summary", filters], queryFn: () => guest ? guestDashboard().then((data) => data.summary) : getDashboardSummary(filters), ...queryOptions });
-  const statuses = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", "status", filters], queryFn: () => guest ? guestDashboard().then((data) => data.statuses) : getStatusDistribution(filters), ...queryOptions });
-  const industries = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", "industry", filters], queryFn: () => guest ? guestDashboard().then((data) => data.industries) : getIndustryDistribution(filters), ...queryOptions });
-  const natures = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", "company-nature", filters], queryFn: () => guest ? guestDashboard().then((data) => data.natures) : getCompanyNatureDistribution(filters), ...queryOptions });
-  const trend = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", "trend", filters, granularity], queryFn: () => guest ? guestDashboard().then((data) => data.trend) : getApplicationTrend(filters, granularity), ...queryOptions });
+  const summary = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", user?.id, "summary", filters], queryFn: () => guest ? guestDashboard().then((data) => data.summary) : getDashboardSummary(filters), ...queryOptions });
+  const statuses = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", user?.id, "status", filters], queryFn: () => guest ? guestDashboard().then((data) => data.statuses) : getStatusDistribution(filters), ...queryOptions });
+  const industries = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", user?.id, "industry", filters], queryFn: () => guest ? guestDashboard().then((data) => data.industries) : getIndustryDistribution(filters), ...queryOptions });
+  const natures = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", user?.id, "company-nature", filters], queryFn: () => guest ? guestDashboard().then((data) => data.natures) : getCompanyNatureDistribution(filters), ...queryOptions });
+  const trend = useQuery({ queryKey: ["dashboard", guest ? "guest" : "cloud", user?.id, "trend", filters, granularity], queryFn: () => guest ? guestDashboard().then((data) => data.trend) : getApplicationTrend(filters, granularity), ...queryOptions });
   const refetchAll = () => void Promise.all([summary.refetch(), statuses.refetch(), industries.refetch(), natures.refetch(), trend.refetch()]);
   const hasFilters = Object.values(filters).some((value) => Array.isArray(value) ? value.length : Boolean(value));
   const charts = useMemo(() => ({

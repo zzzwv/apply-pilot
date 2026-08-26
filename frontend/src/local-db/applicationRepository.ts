@@ -49,8 +49,20 @@ export type LocalStatusLog = {
 export type SyncMetadata = {
   storage_key: string;
   namespace: string;
+  client_sync_id?: string;
+  cloud_application_id?: string;
   dismissed_at?: string;
   imported_at?: string;
+};
+
+export type CloudApplicationMapping = {
+  client_sync_id: string;
+  cloud_application_id: string;
+};
+
+export type LocalApplicationImportRecord = {
+  application: LocalApplication;
+  status_logs: LocalStatusLog[];
 };
 
 export type LocalApplicationListOptions = {
@@ -120,6 +132,19 @@ export class LocalApplicationRepository {
     return logs.sort((first, second) => first.sequence - second.sequence);
   }
 
+  async count(): Promise<number> {
+    const database = await getLocalDatabase();
+    return database.countFromIndex("applications", "by-namespace", this.namespace);
+  }
+
+  async listForImport(): Promise<LocalApplicationImportRecord[]> {
+    const applications = await this.list();
+    return Promise.all(applications.map(async (application) => ({
+      application,
+      status_logs: await this.listStatusLogs(application.local_id),
+    })));
+  }
+
   async get(applicationLocalId: string): Promise<LocalApplication | undefined> {
     const database = await getLocalDatabase();
     return database.get("applications", storageKey(this.namespace, applicationLocalId));
@@ -135,11 +160,41 @@ export class LocalApplicationRepository {
   }
 
   async remove(applicationLocalId: string): Promise<void> {
+    await this.removeMany([applicationLocalId]);
+  }
+
+  async removeMany(applicationLocalIds: string[]): Promise<void> {
+    if (applicationLocalIds.length === 0) return;
     const database = await getLocalDatabase();
-    const logs = await this.listStatusLogs(applicationLocalId);
+    const logs = (await Promise.all(applicationLocalIds.map((applicationLocalId) => this.listStatusLogs(applicationLocalId)))).flat();
     const transaction = database.transaction(["applications", "status_logs"], "readwrite");
-    await transaction.objectStore("applications").delete(storageKey(this.namespace, applicationLocalId));
-    await Promise.all([...logs.map((log) => transaction.objectStore("status_logs").delete(log.storage_key)), transaction.done]);
+    await Promise.all([
+      ...applicationLocalIds.map((applicationLocalId) => transaction.objectStore("applications").delete(storageKey(this.namespace, applicationLocalId))),
+      ...logs.map((log) => transaction.objectStore("status_logs").delete(log.storage_key)),
+      transaction.done,
+    ]);
+  }
+
+  async saveCloudMappings(userId: string, mappings: CloudApplicationMapping[]): Promise<void> {
+    const namespace = `cloud:${userId}`;
+    const database = await getLocalDatabase();
+    const now = new Date().toISOString();
+    const transaction = database.transaction("sync_metadata", "readwrite");
+    await Promise.all([
+      ...mappings.map((mapping) => transaction.store.put({
+        storage_key: storageKey(namespace, mapping.client_sync_id),
+        namespace,
+        client_sync_id: mapping.client_sync_id,
+        cloud_application_id: mapping.cloud_application_id,
+        imported_at: now,
+      })),
+      transaction.done,
+    ]);
+  }
+
+  async getCloudMapping(userId: string, clientSyncId: string): Promise<string | undefined> {
+    const mapping = await (await getLocalDatabase()).get("sync_metadata", storageKey(`cloud:${userId}`, clientSyncId));
+    return mapping?.cloud_application_id;
   }
 
   async changeStatus(
