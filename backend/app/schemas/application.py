@@ -134,3 +134,44 @@ class ApplicationBatchDeleteRequest(BaseModel):
 
 class DeletedCountResponse(BaseModel):
     deleted_count: int
+
+
+class SyncCompany(BaseModel):
+    full_name: str = Field(min_length=1, max_length=255)
+    short_name: str | None = Field(default=None, max_length=255)
+    industry: str | None = Field(default=None, max_length=128)
+    nature: str | None = Field(default=None, max_length=64)
+    size: str | None = Field(default=None, max_length=64)
+
+
+class SyncStatusLog(BaseModel):
+    from_status: ApplicationStatus | None = None
+    to_status: ApplicationStatus
+    remark: str | None = None
+    changed_at: datetime
+
+
+class SyncImportApplication(BaseModel):
+    client_sync_id: UUID
+    company: SyncCompany
+    job_title: str = Field(min_length=1, max_length=255)
+    application_type: ApplicationType
+    application_date: date
+    channel: str = Field(min_length=1, max_length=128)
+    resume_version: str | None = Field(default=None, max_length=128)
+    salary: str | None = Field(default=None, max_length=128)
+    city: str | None = Field(default=None, max_length=128)
+    education_requirement: str | None = Field(default=None, max_length=128)
+    deadline: date | None = None
+    requirements: str | None = None
+    note: str | None = None
+    current_status: ApplicationStatus = ApplicationStatus.NOT_APPLIED
+    status_logs: list[SyncStatusLog] = Field(min_length=1, max_length=100)
+
+    model_config = {"extra": "forbid"}
+
+
+class SyncImportRequest(BaseModel):
+    applications: list[SyncImportApplication] = Field(min_length=1, max_length=200)
+
+    model_config = {"extra": "forbid"}
