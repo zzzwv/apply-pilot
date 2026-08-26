@@ -8,6 +8,9 @@ import { createApplication, deleteApplication, listApplications, toApplicationUp
 import { ApplicationForm } from "../../components/ApplicationForm";
 import { StatusTag } from "../../components/StatusTag";
 import { useUiStore } from "../../store/ui";
+import { useAuthStore } from "../../store/auth";
+import { LocalApplicationDataSource } from "../../data/localApplicationDataSource";
+import type { GuestApplicationInput } from "../../local-db/applicationRepository";
 import {
   applicationTypeLabels,
   statusLabels,
@@ -36,9 +39,12 @@ const sortOptions: { value: ApplicationSort; label: string }[] = [
   { value: "status_priority_desc", label: "状态优先级" },
 ];
 const initialParams: ApplicationListParams = { sort: "application_date_desc", page: 1, page_size: 20 };
+const guestDataSource = new LocalApplicationDataSource();
 
 export function ApplicationsPage() {
   const queryClient = useQueryClient();
+  const { user, initialized } = useAuthStore();
+  const guest = initialized && !user;
   const { applicationDrawerOpen, setApplicationDrawerOpen } = useUiStore();
   const [editing, setEditing] = useState<Application>();
   const [keywordInput, setKeywordInput] = useState("");
@@ -50,13 +56,13 @@ export function ApplicationsPage() {
     return () => window.clearTimeout(timer);
   }, [keywordInput]);
   const applications = useQuery({
-    queryKey: [...applicationsKey, params],
-    queryFn: () => listApplications(params),
+    queryKey: [...applicationsKey, guest ? "guest" : "cloud", user?.id, params],
+    queryFn: () => guest ? guestDataSource.list(params) : listApplications(params),
     placeholderData: keepPreviousData,
   });
-  const createMutation = useMutation({ mutationFn: createApplication, onSuccess: () => queryClient.invalidateQueries({ queryKey: applicationsKey }) });
-  const updateMutation = useMutation({ mutationFn: ({ id, payload }: { id: string; payload: Partial<ApplicationInput> }) => updateApplication(id, payload), onSuccess: () => queryClient.invalidateQueries({ queryKey: applicationsKey }) });
-  const deleteMutation = useMutation({ mutationFn: deleteApplication, onSuccess: () => queryClient.invalidateQueries({ queryKey: applicationsKey }) });
+  const createMutation = useMutation({ mutationFn: (payload: ApplicationInput | GuestApplicationInput) => guest ? guestDataSource.create(payload as GuestApplicationInput) : createApplication(payload as ApplicationInput), onSuccess: () => queryClient.invalidateQueries({ queryKey: applicationsKey }) });
+  const updateMutation = useMutation({ mutationFn: ({ id, payload }: { id: string; payload: Partial<ApplicationInput> }) => guest ? guestDataSource.update(id, payload) : updateApplication(id, payload), onSuccess: () => queryClient.invalidateQueries({ queryKey: applicationsKey }) });
+  const deleteMutation = useMutation({ mutationFn: (id: string) => guest ? guestDataSource.remove(id).then(() => ({ deleted_count: 1 })) : deleteApplication(id), onSuccess: () => queryClient.invalidateQueries({ queryKey: applicationsKey }) });
   const items = applications.data?.items ?? [];
   const updateFilters = (updates: Partial<ApplicationListParams>) => {
     setParams((current) => ({ ...current, ...updates, page: 1 }));
@@ -76,9 +82,9 @@ export function ApplicationsPage() {
     setApplicationDrawerOpen(false);
   };
 
-  const submit = async (payload: ApplicationInput) => {
+  const submit = async (payload: ApplicationInput | GuestApplicationInput) => {
     try {
-      if (editing) await updateMutation.mutateAsync({ id: editing.id, payload: toApplicationUpdate(payload) });
+      if (editing) await updateMutation.mutateAsync({ id: editing.id, payload: toApplicationUpdate(payload as ApplicationInput) });
       else await createMutation.mutateAsync(payload);
       message.success("投递记录已保存");
       closeDrawer();
@@ -201,7 +207,7 @@ export function ApplicationsPage() {
           }}
         />
       )}
-      <ApplicationForm application={editing} open={applicationDrawerOpen} saving={createMutation.isPending || updateMutation.isPending} onClose={closeDrawer} onSubmit={submit} />
+      <ApplicationForm guest={guest} application={editing} open={applicationDrawerOpen} saving={createMutation.isPending || updateMutation.isPending} onClose={closeDrawer} onSubmit={submit} />
     </section>
   );
 }
