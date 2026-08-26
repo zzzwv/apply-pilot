@@ -3,6 +3,7 @@ import { Button, Form, Input, Modal, Space, Typography, message } from "antd";
 import type { QueryClient } from "@tanstack/react-query";
 
 import { useAuthStore } from "../../store/auth";
+import authCareer from "../../assets/illustrations/auth-career.svg";
 
 type AuthFormValues = {
   username_or_email: string;
@@ -70,6 +71,13 @@ export function AuthControls({ queryClient }: Props) {
         footer={null}
         onCancel={() => setMode(undefined)}
       >
+        <div className="auth-controls__intro">
+          <div>
+            <Typography.Text strong>{mode === "register" ? "建立你的投递工作台" : "继续你的求职进程"}</Typography.Text>
+            <Typography.Paragraph type="secondary">{mode === "register" ? "集中管理每一次关键投递。" : "查看最新投递动态和数据。"}</Typography.Paragraph>
+          </div>
+          <img src={authCareer} alt="" aria-hidden="true" />
+        </div>
         <Form<AuthFormValues> layout="vertical" onFinish={mode === "register" ? submitRegister : submitLogin}>
           {mode === "register" && (
             <Form.Item name="username" label="用户名" rules={[{ required: true, min: 3, max: 64 }]}>

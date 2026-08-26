@@ -28,6 +28,104 @@ textarea {
   color: var(--ap-text);
 }
 
+.applypilot-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  height: auto;
+  min-height: 72px;
+  padding: 0 32px;
+  line-height: normal;
+  background: rgb(255 255 255 / 92%);
+  border-bottom: 1px solid var(--ap-border);
+  backdrop-filter: blur(16px);
+}
+
+.applypilot-header__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--ap-space-6);
+  width: min(100%, 1280px);
+  min-height: 72px;
+  margin: 0 auto;
+}
+
+.applypilot-header__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ap-space-3);
+  color: var(--ap-text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.applypilot-header__brand img {
+  width: 36px;
+  height: 36px;
+}
+
+.applypilot-header__brand span {
+  display: grid;
+  gap: 1px;
+}
+
+.applypilot-header__brand strong {
+  font-size: 16px;
+}
+
+.applypilot-header__brand h1 {
+  margin: 0;
+  color: var(--ap-text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.applypilot-header__nav {
+  display: flex;
+  gap: var(--ap-space-1);
+}
+
+.applypilot-header__nav a {
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--ap-text-secondary);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.applypilot-header__nav a[aria-current="page"],
+.applypilot-header__nav a:hover {
+  background: #eef2ff;
+  color: var(--ap-primary);
+}
+
+.applypilot-header__auth {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.applypilot-content {
+  width: min(100%, 1280px);
+  margin: 0 auto;
+  padding: 32px;
+}
+
+.auth-controls__intro {
+  display: flex;
+  align-items: center;
+  gap: var(--ap-space-4);
+  margin-bottom: var(--ap-space-3);
+}
+
+.auth-controls__intro .ant-typography {
+  margin-bottom: 0;
+}
+
+.auth-controls__intro img {
+  width: 96px;
+  margin-left: auto;
+}
+
 :focus-visible {
   outline: none;
   box-shadow: var(--ap-focus-ring);
@@ -48,5 +146,38 @@ textarea {
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .applypilot-header {
+    padding: 0 var(--ap-space-4);
+  }
+
+  .applypilot-header__inner {
+    flex-wrap: wrap;
+    gap: var(--ap-space-2) var(--ap-space-3);
+    padding: var(--ap-space-3) 0;
+  }
+
+  .applypilot-header__brand h1 {
+    display: none;
+  }
+
+  .applypilot-header__nav {
+    order: 3;
+    width: 100%;
+  }
+
+  .applypilot-header__auth {
+    margin-left: auto;
+  }
+
+  .applypilot-content {
+    padding: var(--ap-space-4);
+  }
+
+  .auth-controls__intro img {
+    display: none;
   }
 }
