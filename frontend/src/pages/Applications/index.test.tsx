@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -53,6 +53,64 @@ afterEach(async () => {
 });
 
 describe("ApplicationsPage guest workflow", () => {
+  it("opens the shared create drawer when the applications route receives openCreate state", async () => {
+    useAuthStore.setState({ user: undefined, initialized: true });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[{ pathname: "/applications", state: { openCreate: true } }]}>
+          <Routes>
+            <Route path="/applications" element={<ApplicationsPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("新增投递", { selector: ".ant-drawer-title" })).toBeDefined();
+    expect(screen.queryByText("编辑投递", { selector: ".ant-drawer-title" })).toBeNull();
+  });
+
+  it("opens the shared create drawer from the initial empty-state action", async () => {
+    useAuthStore.setState({ user: undefined, initialized: true });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <ApplicationsPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "还没有投递记录" })).toBeDefined();
+    fireEvent.click(container.querySelector(".empty-state button")!);
+
+    expect(await screen.findByText("新增投递", { selector: ".ant-drawer-title" })).toBeDefined();
+  });
+
+  it("resets a keyword no-results query to the default list parameters from the filtered empty-state action", async () => {
+    useAuthStore.setState({ user: undefined, initialized: true });
+    const list = vi.spyOn(LocalApplicationDataSource.prototype, "list");
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <ApplicationsPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.change(await screen.findByPlaceholderText("搜索公司、岗位、行业、企业性质或备注"), { target: { value: "不存在的职位" } });
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith({ sort: "application_date_desc", page: 1, page_size: 20, keyword: "不存在的职位" }));
+    expect(await screen.findByRole("heading", { name: "暂无匹配投递记录" })).toBeDefined();
+    fireEvent.click(container.querySelector(".empty-state button")!);
+
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith({ sort: "application_date_desc", page: 1, page_size: 20 }));
+    list.mockRestore();
+  });
+
   it("opens the shared edit form from the guest detail edit action", async () => {
     useAuthStore.setState({ user: undefined, initialized: true });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

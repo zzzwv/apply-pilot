@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Button, DatePicker, Empty, Input, Popconfirm, Select, Space, Table, Typography, message } from "antd";
+import { Alert, Button, Card, DatePicker, Input, Popconfirm, Select, Space, Table, message } from "antd";
 import dayjs from "dayjs";
 import { Link, useLocation } from "react-router-dom";
 
 import { createApplication, deleteApplication, listApplications, toApplicationUpdate, updateApplication } from "../../api/applications";
 import { ApplicationForm } from "../../components/ApplicationForm";
+import { EmptyState } from "../../components/EmptyState";
+import { PageHeader } from "../../components/PageHeader";
 import { StatusTag } from "../../components/StatusTag";
 import { useUiStore } from "../../store/ui";
 import { useAuthStore } from "../../store/auth";
 import { LocalApplicationDataSource } from "../../data/localApplicationDataSource";
 import { CloudApplicationCache, writeCloudCacheSafely } from "../../data/cloudApplicationCache";
 import { CloudApplicationDataSource, isRecoverableReadFailure } from "../../data/cloudApplicationDataSource";
+import emptyApplications from "../../assets/illustrations/empty-applications.svg";
 import type { GuestApplicationInput } from "../../local-db/applicationRepository";
 import {
   applicationTypeLabels,
@@ -54,13 +57,17 @@ export function ApplicationsPage() {
   const [editing, setEditing] = useState<Application>();
   const [keywordInput, setKeywordInput] = useState("");
   const [params, setParams] = useState<ApplicationListParams>(initialParams);
-  const pendingEdit = (location.state as { editApplication?: Application } | null)?.editApplication;
+  const locationState = location.state as { editApplication?: Application; openCreate?: boolean } | null;
+  const pendingEdit = locationState?.editApplication;
+  const openCreate = locationState?.openCreate;
   useEffect(() => {
     if (pendingEdit) {
       setEditing(pendingEdit);
       setApplicationDrawerOpen(true);
+    } else if (openCreate) {
+      setApplicationDrawerOpen(true);
     }
-  }, [pendingEdit, setApplicationDrawerOpen]);
+  }, [openCreate, pendingEdit, setApplicationDrawerOpen]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setParams((current) => ({ ...current, keyword: keywordInput.trim() || undefined, page: 1 }));
@@ -127,6 +134,8 @@ export function ApplicationsPage() {
     setApplicationDrawerOpen(false);
   };
 
+  const openCreateDrawer = () => setApplicationDrawerOpen(true);
+
   const submit = async (payload: ApplicationInput | GuestApplicationInput) => {
     try {
       if (editing) await updateMutation.mutateAsync({ id: editing.id, payload: toApplicationUpdate(payload as ApplicationInput) });
@@ -158,86 +167,37 @@ export function ApplicationsPage() {
   ];
 
   return (
-    <section>
-      <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 16 }}>
-        <Typography.Title level={2}>投递记录</Typography.Title>
-        <Button type="primary" onClick={() => setApplicationDrawerOpen(true)}>新增投递</Button>
-      </Space>
+    <section className="applications-page">
+      <PageHeader
+        title="投递记录"
+        description="集中管理每一份投递，持续掌握求职进度。"
+        extra={<Button type="primary" onClick={openCreateDrawer}>新增投递</Button>}
+      />
       {applications.data?.stale && <Alert type="warning" showIcon message={applications.data.cached_at ? `当前网络不可用，正在显示 ${new Date(applications.data.cached_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} 缓存的数据。` : "当前网络不可用，正在显示最近缓存的数据。"} style={{ marginBottom: 16 }} />}
-      <Space wrap style={{ marginBottom: 16 }}>
-        <Input
-          allowClear
-          placeholder="搜索公司、岗位、行业、企业性质或备注"
-          style={{ width: 320 }}
-          value={keywordInput}
-          onChange={(event) => setKeywordInput(event.target.value)}
-        />
-        <Select
-          allowClear
-          mode="multiple"
-          placeholder="投递状态"
-          style={{ minWidth: 160 }}
-          options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))}
-          value={params.status}
-          onChange={(value: ApplicationStatus[]) => updateFilters({ status: value.length ? value : undefined })}
-        />
-        <Select
-          allowClear
-          mode="multiple"
-          placeholder="企业性质"
-          style={{ minWidth: 140 }}
-          options={natureOptions.map(([value, label]) => ({ value, label }))}
-          value={params.company_nature}
-          onChange={(value: string[]) => updateFilters({ company_nature: value.length ? value : undefined })}
-        />
-        <Select
-          allowClear
-          mode="multiple"
-          placeholder="投递类型"
-          style={{ minWidth: 140 }}
-          options={Object.entries(applicationTypeLabels).map(([value, label]) => ({ value, label }))}
-          value={params.application_type}
-          onChange={(value: ApplicationType[]) => updateFilters({ application_type: value.length ? value : undefined })}
-        />
-        <Select
-          allowClear
-          mode="tags"
-          placeholder="行业"
-          style={{ minWidth: 140 }}
-          value={params.industry}
-          onChange={(value: string[]) => updateFilters({ industry: value.length ? value : undefined })}
-        />
-        <Select
-          allowClear
-          mode="multiple"
-          placeholder="企业规模"
-          style={{ minWidth: 140 }}
-          options={sizeOptions.map((value) => ({ value, label: value }))}
-          value={params.company_size}
-          onChange={(value: string[]) => updateFilters({ company_size: value.length ? value : undefined })}
-        />
-        <DatePicker.RangePicker
-          value={params.date_from && params.date_to ? [dayjs(params.date_from), dayjs(params.date_to)] : undefined}
-          onChange={(value) => updateFilters({
-            date_from: value?.[0]?.format("YYYY-MM-DD"),
-            date_to: value?.[1]?.format("YYYY-MM-DD"),
-          })}
-        />
-        <Button onClick={() => updateFilters({ date_from: dayjs().subtract(6, "day").format("YYYY-MM-DD"), date_to: dayjs().format("YYYY-MM-DD") })}>近7天</Button>
-        <Button onClick={() => updateFilters({ date_from: dayjs().subtract(29, "day").format("YYYY-MM-DD"), date_to: dayjs().format("YYYY-MM-DD") })}>近30天</Button>
-        <Select
-          aria-label="排序"
-          style={{ minWidth: 190 }}
-          options={sortOptions}
-          value={params.sort}
-          onChange={(value: ApplicationSort) => updateFilters({ sort: value })}
-        />
-        {hasActiveFilters && <Button onClick={clearFilters}>清空筛选</Button>}
-      </Space>
+      <Card title="筛选条件" className="applications-filters">
+        <div className="applications-filter-grid">
+          <div className="applications-filter-field applications-filter-field--keyword">
+            <label htmlFor="applications-keyword">关键词</label>
+            <Input id="applications-keyword" allowClear placeholder="搜索公司、岗位、行业、企业性质或备注" value={keywordInput} onChange={(event) => setKeywordInput(event.target.value)} />
+          </div>
+          <div className="applications-filter-field"><span>投递状态</span><Select allowClear mode="multiple" placeholder="投递状态" options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))} value={params.status} onChange={(value: ApplicationStatus[]) => updateFilters({ status: value.length ? value : undefined })} /></div>
+          <div className="applications-filter-field"><span>企业性质</span><Select allowClear mode="multiple" placeholder="企业性质" options={natureOptions.map(([value, label]) => ({ value, label }))} value={params.company_nature} onChange={(value: string[]) => updateFilters({ company_nature: value.length ? value : undefined })} /></div>
+          <div className="applications-filter-field"><span>投递类型</span><Select allowClear mode="multiple" placeholder="投递类型" options={Object.entries(applicationTypeLabels).map(([value, label]) => ({ value, label }))} value={params.application_type} onChange={(value: ApplicationType[]) => updateFilters({ application_type: value.length ? value : undefined })} /></div>
+          <div className="applications-filter-field"><span>行业</span><Select allowClear mode="tags" placeholder="行业" value={params.industry} onChange={(value: string[]) => updateFilters({ industry: value.length ? value : undefined })} /></div>
+          <div className="applications-filter-field"><span>企业规模</span><Select allowClear mode="multiple" placeholder="企业规模" options={sizeOptions.map((value) => ({ value, label: value }))} value={params.company_size} onChange={(value: string[]) => updateFilters({ company_size: value.length ? value : undefined })} /></div>
+          <div className="applications-filter-field"><span>投递日期</span><DatePicker.RangePicker value={params.date_from && params.date_to ? [dayjs(params.date_from), dayjs(params.date_to)] : undefined} onChange={(value) => updateFilters({ date_from: value?.[0]?.format("YYYY-MM-DD"), date_to: value?.[1]?.format("YYYY-MM-DD") })} /></div>
+          <div className="applications-filter-field applications-filter-field--quick-actions"><span>快捷日期</span><Space wrap><Button onClick={() => updateFilters({ date_from: dayjs().subtract(6, "day").format("YYYY-MM-DD"), date_to: dayjs().format("YYYY-MM-DD") })}>近7天</Button><Button onClick={() => updateFilters({ date_from: dayjs().subtract(29, "day").format("YYYY-MM-DD"), date_to: dayjs().format("YYYY-MM-DD") })}>近30天</Button></Space></div>
+          <div className="applications-filter-field"><label htmlFor="applications-sort">排序</label><Select id="applications-sort" aria-label="排序" options={sortOptions} value={params.sort} onChange={(value: ApplicationSort) => updateFilters({ sort: value })} /></div>
+          {hasActiveFilters && <div className="applications-filter-field applications-filter-field--action"><span>筛选操作</span><Button onClick={clearFilters}>清空筛选</Button></div>}
+        </div>
+      </Card>
       {items.length === 0 ? (
-        <Empty description={applications.isLoading ? "正在加载投递记录" : hasActiveFilters ? "暂无匹配投递记录" : "暂无投递记录"}>
-          {hasActiveFilters && <Button onClick={clearFilters}>清空筛选</Button>}
-        </Empty>
+        <EmptyState
+          image={{ src: emptyApplications, alt: hasActiveFilters ? "没有匹配的投递记录" : "还没有投递记录" }}
+          title={applications.isLoading ? "正在加载投递记录" : hasActiveFilters ? "暂无匹配投递记录" : "还没有投递记录"}
+          description={applications.isLoading ? "请稍候，正在获取你的投递记录。" : hasActiveFilters ? "试试调整筛选条件，或清空筛选查看全部记录。" : "从第一条投递记录开始，持续掌握求职进度。"}
+          action={<Button type={hasActiveFilters ? "default" : "primary"} onClick={hasActiveFilters ? clearFilters : openCreateDrawer}>{hasActiveFilters ? "清空筛选" : "开始新增投递"}</Button>}
+        />
       ) : (
         <Table<Application>
           rowKey="id"
