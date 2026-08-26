@@ -1,6 +1,6 @@
 import type { EChartsType } from "echarts/core";
 
-import { statusColors } from "../../components/StatusTag";
+import { getStatusVisual } from "../../components/StatusTag";
 import { statusLabels, type ApplicationStatus } from "../../types/application";
 import type {
   CompanyNatureDistributionItem,
@@ -27,7 +27,7 @@ export function statusDistributionOption(items: StatusDistributionItem[]): Chart
         name: statusLabels[item.status],
         value: item.count,
         percentage: item.percentage,
-        itemStyle: { color: statusColors[item.status] },
+        itemStyle: { color: getStatusVisual(item.status).color },
       })),
     }],
   };
@@ -39,7 +39,7 @@ export function industryDistributionOption(items: IndustryDistributionItem[]): C
     tooltip: { trigger: "axis", formatter: (params: Array<{ name: string; value: number; data: { percentage: number } }>) => tooltip(params[0]) },
     xAxis: { type: "category", data: items.map((item) => item.industry), axisLabel: { rotate: 28 } },
     yAxis: { type: "value", minInterval: 1 },
-    series: [{ type: "bar", data: items.map((item) => ({ value: item.count, percentage: item.percentage })), itemStyle: { color: "#1677ff" } }],
+    series: [{ type: "bar", data: items.map((item) => ({ value: item.count, percentage: item.percentage })), itemStyle: { color: "#4F6EF7" } }],
   };
 }
 
@@ -50,6 +50,7 @@ export function companyNatureOption(items: CompanyNatureDistributionItem[]): Cha
     series: [{
       type: "pie",
       radius: "65%",
+      color: ["#7C5CFC", "#4F6EF7"],
       data: items.map((item) => ({ name: item.company_nature === "UNKNOWN" ? "未分类" : item.company_nature, value: item.count, percentage: item.percentage })),
     }],
   };
@@ -61,6 +62,6 @@ export function trendOption(items: TrendPoint[]): ChartOption {
     tooltip: { trigger: "axis" },
     xAxis: { type: "category", boundaryGap: false, data: items.map((item) => item.date) },
     yAxis: { type: "value", minInterval: 1 },
-    series: [{ type: "line", smooth: true, data: items.map((item) => item.count), areaStyle: { opacity: 0.08 }, itemStyle: { color: "#1677ff" } }],
+    series: [{ type: "line", smooth: true, data: items.map((item) => item.count), areaStyle: { opacity: 0.08 }, itemStyle: { color: "#7C5CFC" } }],
   };
 }
