@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DatePicker, Empty, Input, Popconfirm, Select, Space, Table, Typography, message } from "antd";
 import dayjs from "dayjs";
@@ -10,6 +10,7 @@ import { StatusTag } from "../../components/StatusTag";
 import { useUiStore } from "../../store/ui";
 import { useAuthStore } from "../../store/auth";
 import { LocalApplicationDataSource } from "../../data/localApplicationDataSource";
+import { CloudApplicationCache, writeCloudCacheSafely } from "../../data/cloudApplicationCache";
 import type { GuestApplicationInput } from "../../local-db/applicationRepository";
 import {
   applicationTypeLabels,
@@ -46,6 +47,7 @@ export function ApplicationsPage() {
   const location = useLocation();
   const { user, initialized } = useAuthStore();
   const guest = initialized && !user;
+  const cloudCache = useMemo(() => user ? new CloudApplicationCache(user.id) : undefined, [user?.id]);
   const { applicationDrawerOpen, setApplicationDrawerOpen } = useUiStore();
   const [editing, setEditing] = useState<Application>();
   const [keywordInput, setKeywordInput] = useState("");
@@ -65,12 +67,46 @@ export function ApplicationsPage() {
   }, [keywordInput]);
   const applications = useQuery({
     queryKey: [...applicationsKey, guest ? "guest" : "cloud", user?.id, params],
-    queryFn: () => guest ? guestDataSource.list(params) : listApplications(params),
-    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      if (guest) return guestDataSource.list(params);
+      const response = await listApplications(params);
+      if (cloudCache) void writeCloudCacheSafely(() => cloudCache.upsertApplications(response.items));
+      return response;
+    },
+    enabled: initialized,
+    placeholderData: guest ? keepPreviousData : undefined,
   });
-  const createMutation = useMutation({ mutationFn: (payload: ApplicationInput | GuestApplicationInput) => guest ? guestDataSource.create(payload as GuestApplicationInput) : createApplication(payload as ApplicationInput), onSuccess: () => queryClient.invalidateQueries({ queryKey: applicationsKey }) });
-  const updateMutation = useMutation({ mutationFn: ({ id, payload }: { id: string; payload: Partial<ApplicationInput> }) => guest ? guestDataSource.update(id, payload) : updateApplication(id, payload), onSuccess: () => queryClient.invalidateQueries({ queryKey: applicationsKey }) });
-  const deleteMutation = useMutation({ mutationFn: (id: string) => guest ? guestDataSource.remove(id).then(() => ({ deleted_count: 1 })) : deleteApplication(id), onSuccess: () => queryClient.invalidateQueries({ queryKey: applicationsKey }) });
+  const invalidateAfterCloudMutation = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: applicationsKey }),
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+  ]);
+  const createMutation = useMutation({
+    mutationFn: async (payload: ApplicationInput | GuestApplicationInput) => {
+      if (guest) return guestDataSource.create(payload as GuestApplicationInput);
+      const response = await createApplication(payload as ApplicationInput);
+      if (cloudCache) void writeCloudCacheSafely(() => cloudCache.upsertApplication(response));
+      return response;
+    },
+    onSuccess: () => invalidateAfterCloudMutation(),
+  });
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, payload }: { id: string; payload: Partial<ApplicationInput> }) => {
+      if (guest) return guestDataSource.update(id, payload);
+      const response = await updateApplication(id, payload);
+      if (cloudCache) void writeCloudCacheSafely(() => cloudCache.upsertApplication(response));
+      return response;
+    },
+    onSuccess: () => invalidateAfterCloudMutation(),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      if (guest) return guestDataSource.remove(id).then(() => ({ deleted_count: 1 }));
+      const response = await deleteApplication(id);
+      if (cloudCache) void writeCloudCacheSafely(() => cloudCache.removeApplication(id));
+      return response;
+    },
+    onSuccess: () => invalidateAfterCloudMutation(),
+  });
   const items = applications.data?.items ?? [];
   const updateFilters = (updates: Partial<ApplicationListParams>) => {
     setParams((current) => ({ ...current, ...updates, page: 1 }));

@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { create } from "zustand";
 
 import { getCurrentUser, login, register, type RegisterRequest, type User } from "../api/auth";
+import { useUiStore } from "./ui";
 
 const accessTokenKey = "job_tracker_access_token";
 
@@ -50,10 +51,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout(queryClient) {
     const userId = useAuthStore.getState().user?.id;
     if (userId) {
-      queryClient.removeQueries({
-        predicate: (query) => hasUserScopedKey(query.queryKey, userId),
-      });
+      const predicate = (query: { queryKey: readonly unknown[] }) => hasUserScopedKey(query.queryKey, userId);
+      void queryClient.cancelQueries({ predicate });
+      queryClient.removeQueries({ predicate });
     }
+    useUiStore.getState().setApplicationDrawerOpen(false);
     localStorage.removeItem(accessTokenKey);
     set({ user: undefined, initialized: true });
   },

@@ -65,6 +65,10 @@ export type LocalApplicationImportRecord = {
   status_logs: LocalStatusLog[];
 };
 
+export type RemoteApplicationInput = Omit<LocalApplication, "storage_key" | "namespace">;
+
+export type RemoteStatusLogInput = Omit<LocalStatusLog, "storage_key" | "namespace" | "sequence">;
+
 export type LocalApplicationListOptions = {
   keyword?: string;
 };
@@ -148,6 +152,32 @@ export class LocalApplicationRepository {
   async get(applicationLocalId: string): Promise<LocalApplication | undefined> {
     const database = await getLocalDatabase();
     return database.get("applications", storageKey(this.namespace, applicationLocalId));
+  }
+
+  async upsertRemote(input: RemoteApplicationInput): Promise<LocalApplication> {
+    const application: LocalApplication = {
+      ...input,
+      namespace: this.namespace,
+      storage_key: storageKey(this.namespace, input.local_id),
+    };
+    await (await getLocalDatabase()).put("applications", application);
+    return application;
+  }
+
+  async replaceRemoteStatusLogs(applicationLocalId: string, inputs: RemoteStatusLogInput[]): Promise<void> {
+    const database = await getLocalDatabase();
+    const existing = await this.listStatusLogs(applicationLocalId);
+    const transaction = database.transaction("status_logs", "readwrite");
+    await Promise.all([
+      ...existing.map((log) => transaction.store.delete(log.storage_key)),
+      ...inputs.map((input, sequence) => transaction.store.put({
+        ...input,
+        namespace: this.namespace,
+        storage_key: storageKey(this.namespace, input.id),
+        sequence,
+      })),
+      transaction.done,
+    ]);
   }
 
   async update(applicationLocalId: string, values: LocalApplicationUpdate): Promise<LocalApplication> {

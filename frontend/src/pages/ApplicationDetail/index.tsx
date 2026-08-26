@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Descriptions, Input, Popconfirm, Select, Space, Timeline, Typography, message } from "antd";
 import { Link, useParams } from "react-router-dom";
@@ -8,6 +8,7 @@ import { StatusTag } from "../../components/StatusTag";
 import { applicationTypeLabels, statusLabels, type ApplicationStatus } from "../../types/application";
 import { useAuthStore } from "../../store/auth";
 import { LocalApplicationDataSource } from "../../data/localApplicationDataSource";
+import { CloudApplicationCache, writeCloudCacheSafely } from "../../data/cloudApplicationCache";
 
 const guestDataSource = new LocalApplicationDataSource();
 
@@ -16,16 +17,43 @@ export function ApplicationDetailPage() {
   const queryClient = useQueryClient();
   const { user, initialized } = useAuthStore();
   const guest = initialized && !user;
+  const cloudCache = useMemo(() => user ? new CloudApplicationCache(user.id) : undefined, [user?.id]);
   const [status, setStatus] = useState<ApplicationStatus>();
   const [remark, setRemark] = useState("");
-  const application = useQuery({ queryKey: ["application", guest ? "guest" : "cloud", id], queryFn: () => guest ? guestDataSource.get(id) : getApplication(id), enabled: Boolean(id) });
-  const logs = useQuery({ queryKey: ["application-status-logs", guest ? "guest" : "cloud", id], queryFn: () => guest ? guestDataSource.getStatusLogs(id) : getApplicationStatusLogs(id), enabled: Boolean(id) });
+  const applicationKey = ["application", guest ? "guest" : "cloud", user?.id, id];
+  const logsKey = ["application-status-logs", guest ? "guest" : "cloud", user?.id, id];
+  const application = useQuery({
+    queryKey: applicationKey,
+    queryFn: async () => {
+      if (guest) return guestDataSource.get(id);
+      const response = await getApplication(id);
+      if (cloudCache) void writeCloudCacheSafely(() => cloudCache.upsertApplication(response));
+      return response;
+    },
+    enabled: initialized && Boolean(id),
+  });
+  const logs = useQuery({
+    queryKey: logsKey,
+    queryFn: async () => {
+      if (guest) return guestDataSource.getStatusLogs(id);
+      const response = await getApplicationStatusLogs(id);
+      if (cloudCache) void writeCloudCacheSafely(() => cloudCache.replaceStatusLogs(id, response));
+      return response;
+    },
+    enabled: initialized && Boolean(id),
+  });
   const changeStatus = useMutation({
-    mutationFn: () => guest ? guestDataSource.changeStatus(id, status!, remark) : changeApplicationStatus(id, status!, remark),
+    mutationFn: async () => {
+      if (guest) return guestDataSource.changeStatus(id, status!, remark);
+      const response = await changeApplicationStatus(id, status!, remark);
+      if (cloudCache) void writeCloudCacheSafely(() => cloudCache.upsertApplication(response));
+      return response;
+    },
     onSuccess: () => Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["application", id] }),
-      queryClient.invalidateQueries({ queryKey: ["application-status-logs", id] }),
+      queryClient.invalidateQueries({ queryKey: applicationKey }),
+      queryClient.invalidateQueries({ queryKey: logsKey }),
       queryClient.invalidateQueries({ queryKey: ["applications"] }),
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
     ]),
   });
   const remove = useMutation({
