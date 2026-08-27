@@ -106,3 +106,39 @@ def test_company_intelligence_migration_upgrades_and_downgrades_legacy_schema() 
             column["name"] for column in inspect(connection).get_columns("recruitment_links")
         }
         assert column_names == {"id"}
+
+
+def test_sync_import_migration_handles_a_column_created_by_the_initial_schema() -> None:
+    """Protect a fresh schema from failing when Phase 6 adds its already-present column."""
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "20260826_0004_phase6_sync_import.py"
+    )
+    spec = importlib.util.spec_from_file_location("sync_import_migration", migration_path)
+    assert spec is not None
+    assert spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    engine = create_engine("sqlite://")
+    metadata = MetaData()
+    Table(
+        "job_applications",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("user_id", Integer, nullable=False),
+        Column("client_sync_id", String, nullable=True),
+    )
+    metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        context = MigrationContext.configure(connection)
+        with Operations.context(context):
+            migration.upgrade()
+
+        index_names = {
+            index["name"] for index in inspect(connection).get_indexes("job_applications")
+        }
+        assert index_names == {"uq_job_applications_user_client_sync_id"}
