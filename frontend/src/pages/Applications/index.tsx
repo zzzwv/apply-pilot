@@ -15,6 +15,7 @@ import { LocalApplicationDataSource } from "../../data/localApplicationDataSourc
 import { CloudApplicationCache, writeCloudCacheSafely } from "../../data/cloudApplicationCache";
 import { CloudApplicationDataSource, isRecoverableReadFailure } from "../../data/cloudApplicationDataSource";
 import emptyApplications from "../../assets/illustrations/empty-applications.svg";
+import { toExternalHttpUrl } from "../../utils/externalUrl";
 import type { GuestApplicationInput } from "../../local-db/applicationRepository";
 import {
   applicationTypeLabels,
@@ -148,7 +149,15 @@ export function ApplicationsPage() {
   };
 
   const columns = [
-    { title: "企业", key: "company", render: (_: unknown, record: Application) => record.company.short_name || record.company.full_name },
+    {
+      title: "企业",
+      key: "company",
+      render: (_: unknown, record: Application) => {
+        const name = record.company.short_name || record.company.full_name;
+        const channelUrl = toExternalHttpUrl(record.channel);
+        return channelUrl ? <a href={channelUrl} target="_blank" rel="noreferrer">{name}</a> : name;
+      },
+    },
     { title: "岗位", dataIndex: "job_title" },
     { title: "投递类型", dataIndex: "application_type", render: (value: Application["application_type"]) => applicationTypeLabels[value] },
     { title: "投递时间", dataIndex: "application_date" },

@@ -1,4 +1,5 @@
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +8,7 @@ from app.api.auth import get_current_user
 from app.core.database import get_session
 from app.core.responses import success_response
 from app.models import User
-from app.schemas.company import CompanyCreate, CompanyRead
+from app.schemas.company import CompanyCreate, CompanyDetailRead, CompanyRead, CompanyUpdate
 from app.services.company_service import CompanyService
 
 router = APIRouter(prefix="/companies", tags=["companies"])
@@ -34,3 +35,24 @@ async def create_company(
     return success_response(
         CompanyRead.model_validate(company).model_dump(mode="json"), status_code=201
     )
+
+
+@router.get("/{company_id}")
+async def get_company(
+    company_id: UUID, session: SessionDependency, current_user: CurrentUserDependency
+):
+    del current_user
+    company = await CompanyService(session).get(company_id)
+    return success_response(company.model_dump(mode="json"))
+
+
+@router.patch("/{company_id}")
+async def update_company(
+    company_id: UUID,
+    payload: CompanyUpdate,
+    session: SessionDependency,
+    current_user: CurrentUserDependency,
+):
+    del current_user
+    company = await CompanyService(session).update(company_id, payload)
+    return success_response(company.model_dump(mode="json"))

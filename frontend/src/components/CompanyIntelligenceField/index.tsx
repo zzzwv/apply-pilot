@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Checkbox, Input, Space, Tag, Typography } from "antd";
 
 import { confirmCompanyIntelligence, searchCompanyIntelligence } from "../../api/companyIntelligence";
-import { createCompany, searchLocalCompanies, type Company } from "../../api/companies";
+import { createCompany, getCompany, searchLocalCompanies, updateCompany, type Company, type CompanyDetail } from "../../api/companies";
 import type {
   CompanyCandidate,
   CompanyIntelligenceSearchResult,
@@ -68,6 +68,20 @@ function toEditableLink(link: RecruitmentLinkCandidate): EditableRecruitmentLink
   };
 }
 
+function toExistingCompanyCandidate(company: CompanyDetail): CompanyCandidate {
+  return {
+    company_name: company.full_name,
+    short_name: company.short_name,
+    industry: company.industry,
+    company_nature: company.nature,
+    company_size: company.size,
+    official_website: company.official_website,
+    description: company.business_description,
+    recruitment_links: [],
+    sources: [],
+  };
+}
+
 export function CompanyIntelligenceField({
   value,
   initialCompany,
@@ -79,6 +93,7 @@ export function CompanyIntelligenceField({
   const [searchingLocal, setSearchingLocal] = useState(false);
   const [searchingWeb, setSearchingWeb] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [savingExistingCompany, setSavingExistingCompany] = useState(false);
   const [draft, setDraft] = useState<CompanyCandidate>();
   const [selectedUrls, setSelectedUrls] = useState<string[]>([]);
   const [partial, setPartial] = useState(false);
@@ -86,6 +101,7 @@ export function CompanyIntelligenceField({
   const [manualError, setManualError] = useState<string>();
   const [linkedCompany, setLinkedCompany] = useState<Company | undefined>(initialCompany);
   const [linkedExistingCompany, setLinkedExistingCompany] = useState(Boolean(initialCompany));
+  const [editingExistingCompany, setEditingExistingCompany] = useState(Boolean(initialCompany));
   const webRequest = useRef<AbortController | undefined>(undefined);
 
   useEffect(() => {
@@ -94,6 +110,22 @@ export function CompanyIntelligenceField({
       setLinkedExistingCompany(true);
     }
   }, [initialCompany, value]);
+
+  useEffect(() => {
+    if (!linkedExistingCompany || !linkedCompany) return undefined;
+    let active = true;
+    void (async () => {
+      try {
+        const company = await getCompany(linkedCompany.id);
+        if (!active) return;
+        setDraft(toExistingCompanyCandidate(company));
+        setEditingExistingCompany(true);
+      } catch {
+        if (active) setManualError("读取企业信息失败，请稍后重试。");
+      }
+    })();
+    return () => { active = false; };
+  }, [linkedCompany, linkedExistingCompany]);
 
   useEffect(() => () => webRequest.current?.abort(), []);
 
@@ -128,6 +160,7 @@ export function CompanyIntelligenceField({
   );
 
   const applySearchResult = (result: CompanyIntelligenceSearchResult) => {
+    setEditingExistingCompany(false);
     setPartial(result.partial);
     setWarnings(result.warnings);
     if (!result.company) {
@@ -200,6 +233,7 @@ export function CompanyIntelligenceField({
     setLinkedExistingCompany(true);
     setCompanyName(company.full_name);
     setDraft(undefined);
+    setEditingExistingCompany(true);
     setManualError(undefined);
     onChange(company.id);
   };
@@ -209,6 +243,7 @@ export function CompanyIntelligenceField({
       onChange(undefined);
       setLinkedCompany(undefined);
       setLinkedExistingCompany(false);
+      setEditingExistingCompany(false);
       setDraft(undefined);
       setSelectedUrls([]);
       setPartial(false);
@@ -233,6 +268,7 @@ export function CompanyIntelligenceField({
       });
       setLinkedCompany(response.company);
       setLinkedExistingCompany(!response.created);
+      setEditingExistingCompany(!response.created);
       setCompanyName(response.company.full_name);
       onChange(response.company.id);
     } catch (error: unknown) {
@@ -240,6 +276,32 @@ export function CompanyIntelligenceField({
       setManualError(status === 409 ? "企业信息与现有企业冲突，请检查名称或别名后重试。" : "确认企业信息失败，请手动创建企业。");
     } finally {
       setConfirming(false);
+    }
+  };
+
+  const saveExistingCompany = async () => {
+    if (!draft || !linkedCompany) return;
+    setSavingExistingCompany(true);
+    setManualError(undefined);
+    try {
+      const company = await updateCompany(linkedCompany.id, {
+        full_name: draft.company_name,
+        short_name: draft.short_name ?? null,
+        industry: draft.industry ?? null,
+        nature: draft.company_nature ?? null,
+        size: draft.company_size ?? null,
+        official_website: draft.official_website ?? null,
+        business_description: draft.description ?? null,
+      });
+      setLinkedCompany(company);
+      setCompanyName(company.full_name);
+      setDraft(toExistingCompanyCandidate(company));
+      onChange(company.id);
+    } catch (error: unknown) {
+      const status = (error as { response?: { status?: number } }).response?.status;
+      setManualError(status === 409 ? "企业名称与既有企业冲突，请修改后重试。" : "保存企业信息失败，请稍后重试。");
+    } finally {
+      setSavingExistingCompany(false);
     }
   };
 
@@ -253,6 +315,7 @@ export function CompanyIntelligenceField({
       const company = await createCompany(name);
       setLinkedCompany(company);
       setLinkedExistingCompany(false);
+      setEditingExistingCompany(false);
       setPartial(false);
       setWarnings([]);
       onChange(company.id);
@@ -287,10 +350,10 @@ export function CompanyIntelligenceField({
         <section className="company-intelligence-preview" aria-labelledby="company-intelligence-preview-title">
           <div className="company-intelligence-preview__heading">
             <div>
-              <Typography.Title id="company-intelligence-preview-title" level={3}>企业信息预览</Typography.Title>
-              <Typography.Text type="secondary">联网获取的信息可在确认前编辑。</Typography.Text>
+              <Typography.Title id="company-intelligence-preview-title" level={3}>{editingExistingCompany ? "编辑企业信息" : "企业信息预览"}</Typography.Title>
+              <Typography.Text type="secondary">{editingExistingCompany ? "修改会同步更新使用该企业的投递记录。" : "联网获取的信息可在确认前编辑。"}</Typography.Text>
             </div>
-            <Tag className="company-intelligence-preview__verification">验证状态：{verificationLabels[draft.verification_status ?? "unverified"]}</Tag>
+            {!editingExistingCompany && <Tag className="company-intelligence-preview__verification">验证状态：{verificationLabels[draft.verification_status ?? "unverified"]}</Tag>}
           </div>
           <Space className="company-intelligence-preview__fields" direction="vertical" style={{ display: "flex" }}>
             <Input aria-label="企业全称" value={draft.company_name} onChange={(event) => updateDraft("company_name", event.target.value)} />
@@ -301,7 +364,7 @@ export function CompanyIntelligenceField({
             <Input aria-label="官网" value={draft.official_website ?? ""} placeholder="官网" onChange={(event) => updateDraft("official_website", event.target.value)} />
             <Input.TextArea aria-label="企业描述" value={draft.description ?? ""} placeholder="企业描述" onChange={(event) => updateDraft("description", event.target.value)} />
           </Space>
-          <section className="company-intelligence-preview__section" aria-labelledby="company-intelligence-recruitment-title">
+          {!editingExistingCompany && <section className="company-intelligence-preview__section" aria-labelledby="company-intelligence-recruitment-title">
             <Typography.Title id="company-intelligence-recruitment-title" level={4}>招聘链接</Typography.Title>
             <Space className="company-intelligence-preview__list" direction="vertical" style={{ display: "flex" }}>
             {orderedLinks.map((link) => (
@@ -320,14 +383,14 @@ export function CompanyIntelligenceField({
               </article>
             ))}
             </Space>
-          </section>
-          <section className="company-intelligence-preview__section" aria-labelledby="company-intelligence-sources-title">
+          </section>}
+          {!editingExistingCompany && <section className="company-intelligence-preview__section" aria-labelledby="company-intelligence-sources-title">
             <Typography.Title id="company-intelligence-sources-title" level={4}>信息来源</Typography.Title>
             <Space className="company-intelligence-preview__list" direction="vertical" style={{ display: "flex" }}>
               {draft.sources.map((source) => <article className="company-intelligence-source" key={source.url}><div><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a><Tag className={source.source_type === "official" ? "company-intelligence-source__type company-intelligence-source__type--official" : "company-intelligence-source__type"}>{source.source_type === "official" ? "官方来源" : "第三方来源"}</Tag></div><Typography.Text type="secondary">{source.source_type} · {sourceDomain(source.url)}</Typography.Text><a className="company-intelligence-link__url" href={source.url} target="_blank" rel="noreferrer">{source.url}</a></article>)}
             </Space>
-          </section>
-          <Button className="company-intelligence-preview__confirm" type="primary" loading={confirming} onClick={confirmCandidate}>确认企业信息</Button>
+          </section>}
+          <Button className="company-intelligence-preview__confirm" type="primary" loading={editingExistingCompany ? savingExistingCompany : confirming} onClick={editingExistingCompany ? saveExistingCompany : confirmCandidate}>{editingExistingCompany ? "保存企业信息" : "确认企业信息"}</Button>
         </section>
       )}
 

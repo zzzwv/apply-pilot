@@ -183,4 +183,33 @@ describe("ApplicationsPage guest workflow", () => {
     expect(await screen.findByText("编辑投递")).toBeDefined();
     expect(screen.getByDisplayValue("本地科技")).toBeDefined();
   });
+
+  it("links a company name to its HTTP(S) application channel", async () => {
+    useAuthStore.setState({ user: undefined, initialized: true });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const source = new LocalApplicationDataSource();
+    await source.create({
+      company: guestApplication.company,
+      job_title: guestApplication.job_title,
+      application_type: guestApplication.application_type,
+      application_date: guestApplication.application_date,
+      channel: "https://jobs.example.com/frontend",
+      resume_version: null,
+      salary: null,
+      city: null,
+      education_requirement: null,
+      deadline: null,
+      requirements: null,
+      note: null,
+      current_status: guestApplication.current_status,
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter><ApplicationsPage /></MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect((await screen.findByRole("link", { name: "本地科技" })).getAttribute("href")).toBe("https://jobs.example.com/frontend");
+  });
 });

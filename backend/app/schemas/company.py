@@ -29,6 +29,27 @@ class CompanyRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CompanyDetailRead(CompanyRead):
+    short_name: str | None
+    industry: str | None
+    nature: str | None
+    size: str | None
+    official_website: str | None
+    business_description: str | None
+
+
+class CompanyUpdate(BaseModel):
+    full_name: str | None = Field(default=None, min_length=1, max_length=255)
+    short_name: str | None = Field(default=None, max_length=255)
+    industry: str | None = Field(default=None, max_length=128)
+    nature: str | None = Field(default=None, max_length=64)
+    size: str | None = Field(default=None, max_length=64)
+    official_website: str | None = Field(default=None, max_length=2048)
+    business_description: str | None = None
+
+    model_config = {"extra": "forbid"}
+
+
 class CompanyIntelligenceConfirmRequest(BaseModel):
     """User-edited candidate data that may be persisted only after explicit confirmation."""
 

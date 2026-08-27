@@ -12,9 +12,11 @@ from app.models.enums import (
 from app.repositories.company import CompanyRepository
 from app.schemas.company import (
     CompanyCreate,
+    CompanyDetailRead,
     CompanyIntelligenceConfirmRequest,
     CompanyIntelligenceConfirmResponse,
     CompanyRead,
+    CompanyUpdate,
     ConfirmedRecruitmentLinkRead,
 )
 
@@ -36,6 +38,30 @@ class CompanyService:
         """Find Company and CompanyAlias matches without involving company intelligence."""
         companies = await self.companies.search_by_name_or_alias(keyword)
         return [CompanyRead.model_validate(company) for company in companies]
+
+    async def get(self, company_id: object) -> CompanyDetailRead:
+        company = await self.companies.get_by_id(company_id)
+        if company is None:
+            raise AppError(ErrorCode.COMPANY_NOT_FOUND, "Company not found")
+        return CompanyDetailRead.model_validate(company)
+
+    async def update(self, company_id: object, payload: CompanyUpdate) -> CompanyDetailRead:
+        company = await self.companies.get_by_id(company_id)
+        if company is None:
+            raise AppError(ErrorCode.COMPANY_NOT_FOUND, "Company not found")
+
+        values = payload.model_dump(exclude_unset=True)
+        full_name = values.get("full_name")
+        if full_name is not None:
+            existing = await self.companies.get_by_full_name(full_name)
+            if existing is not None and existing.id != company.id:
+                raise AppError(ErrorCode.APPLICATION_DUPLICATE, "Company already exists", 409)
+
+        for field, value in values.items():
+            setattr(company, field, value)
+        await self.session.commit()
+        await self.session.refresh(company)
+        return CompanyDetailRead.model_validate(company)
 
     async def confirm(
         self, payload: CompanyIntelligenceConfirmRequest

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { confirmCompanyIntelligence, searchCompanyIntelligence } from "../../api/companyIntelligence";
-import { createCompany, searchLocalCompanies } from "../../api/companies";
+import { createCompany, getCompany, searchLocalCompanies, updateCompany } from "../../api/companies";
 import { CompanyIntelligenceField } from ".";
 import type { CompanyCandidate, CompanyIntelligenceSearchResult } from "../../types/companyIntelligence";
 
@@ -13,7 +13,9 @@ vi.mock("../../api/companyIntelligence", () => ({
 
 vi.mock("../../api/companies", () => ({
   createCompany: vi.fn(),
+  getCompany: vi.fn(),
   searchLocalCompanies: vi.fn(),
+  updateCompany: vi.fn(),
 }));
 
 afterEach(() => {
@@ -209,5 +211,36 @@ describe("CompanyIntelligenceField", () => {
 
     await waitFor(() => expect(createCompany).toHaveBeenCalledWith("手动企业"));
     expect(onChange).toHaveBeenCalledWith(localCompany.id);
+  });
+
+  it("loads and saves editable fields for an existing company without changing the linked ID", async () => {
+    vi.mocked(searchLocalCompanies).mockResolvedValue([]);
+    vi.mocked(getCompany).mockResolvedValue({
+      ...localCompany,
+      short_name: "腾讯",
+      industry: "互联网",
+      nature: "PRIVATE",
+      size: "5000以上",
+      official_website: "https://www.tencent.com",
+      business_description: "即时通信服务商",
+    });
+    vi.mocked(updateCompany).mockResolvedValue({
+      ...localCompany,
+      short_name: "腾讯云",
+      industry: "云计算",
+      nature: "PRIVATE",
+      size: "5000以上",
+      official_website: "https://cloud.tencent.com",
+      business_description: "云服务商",
+    });
+    const onChange = vi.fn();
+    render(<CompanyIntelligenceField value={localCompany.id} initialCompany={localCompany} onChange={onChange} />);
+
+    expect(await screen.findByDisplayValue("腾讯")).toBeDefined();
+    fireEvent.change(screen.getByLabelText("行业"), { target: { value: "云计算" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存企业信息" }));
+
+    await waitFor(() => expect(updateCompany).toHaveBeenCalledWith(localCompany.id, expect.objectContaining({ industry: "云计算" })));
+    expect(onChange).not.toHaveBeenCalledWith(undefined);
   });
 });

@@ -47,4 +47,18 @@ describe("ApplicationDetailPage offline fallback", () => {
     expect(await screen.findByText(/当前网络不可用/)).toBeDefined();
     expect((await screen.findAllByText("cached")).length).toBeGreaterThan(1);
   });
+
+  it("renames application metadata and makes an HTTP(S) channel clickable", async () => {
+    const cache = new CloudApplicationCache("user-a");
+    await cache.upsertApplication({ ...cachedApplication, id: "linked", channel: "https://jobs.example.com/cached" });
+    await cache.replaceStatusLogs("linked", cachedLogs.map((log) => ({ ...log, application_id: "linked" })));
+    mockedGet.mockRejectedValueOnce(new AxiosError("offline", "ERR_NETWORK"));
+    mockedLogs.mockRejectedValueOnce(new AxiosError("offline", "ERR_NETWORK"));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/applications/linked"]}><Routes><Route path="/applications/:id" element={<ApplicationDetailPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+
+    expect(await screen.findByText("投递数据")).toBeDefined();
+    expect((screen.getByRole("link", { name: "https://jobs.example.com/cached" })).getAttribute("href")).toBe("https://jobs.example.com/cached");
+  });
 });

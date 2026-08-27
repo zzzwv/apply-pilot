@@ -10,6 +10,7 @@ import { useAuthStore } from "../../store/auth";
 import { LocalApplicationDataSource } from "../../data/localApplicationDataSource";
 import { CloudApplicationCache, writeCloudCacheSafely } from "../../data/cloudApplicationCache";
 import { CloudApplicationDataSource, isRecoverableReadFailure } from "../../data/cloudApplicationDataSource";
+import { toExternalHttpUrl } from "../../utils/externalUrl";
 
 const guestDataSource = new LocalApplicationDataSource();
 
@@ -62,6 +63,7 @@ export function ApplicationDetailPage() {
   if (application.isError) return <Typography.Paragraph>读取投递记录失败</Typography.Paragraph>;
   if (!application.data?.data) return <Typography.Paragraph>{application.isLoading ? "正在加载…" : "未找到投递记录"}</Typography.Paragraph>;
   const item = application.data.data;
+  const channelUrl = toExternalHttpUrl(item.channel);
   const stale = application.data.stale || logs.data?.stale;
   const cachedAt = application.data.cached_at ?? logs.data?.cached_at;
 
@@ -99,11 +101,11 @@ export function ApplicationDetailPage() {
                 <StatusTag status={item.current_status} />
               </section>
             </Card>
-            <Card title="投递元数据" className="application-detail-page__card">
+            <Card title="投递数据" className="application-detail-page__card">
               <Descriptions column={1}>
                 <Descriptions.Item label="投递类型">{applicationTypeLabels[item.application_type]}</Descriptions.Item>
                 <Descriptions.Item label="投递时间">{item.application_date}</Descriptions.Item>
-                <Descriptions.Item label="投递渠道">{item.channel}</Descriptions.Item>
+                <Descriptions.Item label="投递渠道">{channelUrl ? <a href={channelUrl} target="_blank" rel="noreferrer">{item.channel}</a> : item.channel}</Descriptions.Item>
                 <Descriptions.Item label="备注">{item.note || "—"}</Descriptions.Item>
               </Descriptions>
             </Card>
