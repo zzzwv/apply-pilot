@@ -430,6 +430,8 @@ async def test_canonical_extraction_valid(caplog: pytest.LogCaptureFixture) -> N
     assert result.source_ids == ["S1", "S2"]
     assert payload["response_format"]["type"] == "json_schema"
     assert "tools" not in payload
+    assert "full_name" in payload["messages"][0]["content"]
+    assert "company_name" in payload["messages"][0]["content"]
     assert any("KIMI_EXTRACTION_COMPLETED" in record.message for record in caplog.records)
 
 
@@ -486,6 +488,106 @@ async def test_canonical_extraction_normalizes_observed_legacy_recruitment_field
         ("U2", "official_campus", False),
         ("U3", "other", True),
     ]
+
+
+@pytest.mark.asyncio
+async def test_canonical_extraction_normalizes_observed_production_company_shape() -> None:
+    """Map the redacted production shape, then strictly validate the canonical result."""
+
+    from app.company_intelligence.kimi_two_stage import KimiCanonicalExtractor
+    from app.core.config import Settings
+
+    # Field names come from the production Kimi schema-validation diagnostic.
+    # Values are synthetic so that no provider response text is retained in the repository.
+    observed_payload = {
+        "company_name": "Acme Corporation",
+        "industry": "Software",
+        "founded_year": 2020,
+        "headquarters": "Shanghai",
+        "products": ["Acme Platform"],
+        "campus_recruitment": "https://untrusted.example/campus",
+        "internship_portal": None,
+        "social_hiring": "https://untrusted.example/jobs",
+        "notes": "Synthetic redacted production-shape fixture.",
+    }
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": json.dumps(observed_payload),
+                        },
+                    }
+                ]
+            },
+        )
+
+    extractor = KimiCanonicalExtractor(
+        Settings(
+            jwt_secret_key="test-only-jwt-secret-at-least-32-bytes",
+            kimi_api_key="test-kimi-api-key",
+        ),
+        transport=httpx.MockTransport(handler),
+        retry_delay_seconds=0,
+    )
+
+    result = await extractor.extract(evidence(), deadline=monotonic() + 10)
+
+    assert result.full_name == "Acme Corporation"
+    assert result.industry == "Software"
+    assert result.source_ids == []
+    assert result.recruitment_links == []
+
+
+@pytest.mark.asyncio
+async def test_canonical_extraction_keeps_unrecognized_legacy_fields_strict() -> None:
+    """The narrow production compatibility mapping must not accept arbitrary extras."""
+
+    from app.company_intelligence.kimi_two_stage import KimiCanonicalExtractor
+    from app.company_intelligence.providers import ProviderError, ProviderErrorCode
+    from app.core.config import Settings
+
+    observed_payload = {
+        "company_name": "Acme Corporation",
+        "founded_year": 2020,
+        "unexpected_provider_field": "must remain rejected",
+    }
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": json.dumps(observed_payload),
+                        },
+                    }
+                ]
+            },
+        )
+
+    extractor = KimiCanonicalExtractor(
+        Settings(
+            jwt_secret_key="test-only-jwt-secret-at-least-32-bytes",
+            kimi_api_key="test-kimi-api-key",
+        ),
+        transport=httpx.MockTransport(handler),
+        retry_delay_seconds=0,
+    )
+
+    with pytest.raises(ProviderError) as raised:
+        await extractor.extract(evidence(), deadline=monotonic() + 10)
+
+    assert raised.value.code is ProviderErrorCode.KIMI_EXTRACTION_SCHEMA_VALIDATION_FAILED
+    assert raised.value.diagnostic == {"failed_fields": ["unexpected_provider_field"]}
 
 
 @pytest.mark.asyncio
