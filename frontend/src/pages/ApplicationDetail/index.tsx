@@ -80,7 +80,14 @@ export function ApplicationDetailPage() {
           <div className="application-detail-page__primary">
             <Card title="投递信息" className="application-detail-page__card">
               <Descriptions column={1}>
-                <Descriptions.Item label="企业 ID">{item.company_id}</Descriptions.Item>
+                <Descriptions.Item label="企业">{item.company.short_name || item.company.full_name}</Descriptions.Item>
+                <Descriptions.Item label="投递岗位">{item.job_title}</Descriptions.Item>
+                <Descriptions.Item label="投递城市">{item.city || "—"}</Descriptions.Item>
+                <Descriptions.Item label="简历版本">{item.resume_version || "—"}</Descriptions.Item>
+                <Descriptions.Item label="薪资">{item.salary || "—"}</Descriptions.Item>
+                <Descriptions.Item label="学历要求">{item.education_requirement || "—"}</Descriptions.Item>
+                <Descriptions.Item label="截止日期">{item.deadline || "—"}</Descriptions.Item>
+                <Descriptions.Item label="岗位要求">{item.requirements || "—"}</Descriptions.Item>
               </Descriptions>
             </Card>
             <Card title="更新状态" className="application-detail-page__card">

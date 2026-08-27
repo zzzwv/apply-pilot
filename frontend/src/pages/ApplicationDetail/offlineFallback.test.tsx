@@ -45,7 +45,7 @@ describe("ApplicationDetailPage offline fallback", () => {
     expect(await screen.findByRole("heading", { name: "Cached detail", level: 1 })).toBeDefined();
     expect((await screen.findByRole("region", { name: "当前状态" })).textContent).toContain("已投简历");
     expect(await screen.findByText(/当前网络不可用/)).toBeDefined();
-    expect((await screen.findAllByText("cached")).length).toBeGreaterThan(1);
+    expect(await screen.findByText("cached")).toBeDefined();
   });
 
   it("renames application metadata and makes an HTTP(S) channel clickable", async () => {
@@ -60,5 +60,31 @@ describe("ApplicationDetailPage offline fallback", () => {
 
     expect(await screen.findByText("投递数据")).toBeDefined();
     expect((screen.getByRole("link", { name: "https://jobs.example.com/cached" })).getAttribute("href")).toBe("https://jobs.example.com/cached");
+  });
+
+  it("shows the application fields instead of only the internal company ID", async () => {
+    const cache = new CloudApplicationCache("user-a");
+    await cache.upsertApplication({
+      ...cachedApplication,
+      id: "application-fields",
+      city: "上海",
+      resume_version: "v3",
+      salary: "30k",
+      education_requirement: "本科",
+      deadline: "2026-09-30",
+      requirements: "熟悉 TypeScript",
+    });
+    await cache.replaceStatusLogs("application-fields", cachedLogs.map((log) => ({ ...log, application_id: "application-fields" })));
+    mockedGet.mockRejectedValueOnce(new AxiosError("offline", "ERR_NETWORK"));
+    mockedLogs.mockRejectedValueOnce(new AxiosError("offline", "ERR_NETWORK"));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/applications/application-fields"]}><Routes><Route path="/applications/:id" element={<ApplicationDetailPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+
+    expect(await screen.findByRole("heading", { name: "Cached detail", level: 1 })).toBeDefined();
+    for (const value of ["Cached Corp", "上海", "v3", "30k", "本科", "2026-09-30", "熟悉 TypeScript"]) {
+      expect(await screen.findByText(value)).toBeDefined();
+    }
+    expect(screen.queryByText("企业 ID")).toBeNull();
   });
 });

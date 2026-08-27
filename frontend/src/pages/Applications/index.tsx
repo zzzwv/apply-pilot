@@ -117,6 +117,12 @@ export function ApplicationsPage() {
     onError: (error) => message.error(isRecoverableReadFailure(error) ? "当前网络不可用，请恢复网络后再修改" : "删除失败，请检查登录状态"),
   });
   const items = applications.data?.data.items ?? [];
+  const industryOptions = useMemo(
+    () => Array.from(new Set(items.map((item) => item.company.industry).filter((industry): industry is string => Boolean(industry))))
+      .sort()
+      .map((industry) => ({ value: industry, label: industry })),
+    [items],
+  );
   const updateFilters = (updates: Partial<ApplicationListParams>) => {
     setParams((current) => ({ ...current, ...updates, page: 1 }));
   };
@@ -192,7 +198,7 @@ export function ApplicationsPage() {
           <div className="applications-filter-field"><label htmlFor="applications-status">投递状态</label><Select id="applications-status" aria-label="投递状态" allowClear mode="multiple" placeholder="投递状态" options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))} value={params.status} onChange={(value: ApplicationStatus[]) => updateFilters({ status: value.length ? value : undefined })} /></div>
           <div className="applications-filter-field"><label htmlFor="applications-company-nature">企业性质</label><Select id="applications-company-nature" aria-label="企业性质" allowClear mode="multiple" placeholder="企业性质" options={natureOptions.map(([value, label]) => ({ value, label }))} value={params.company_nature} onChange={(value: string[]) => updateFilters({ company_nature: value.length ? value : undefined })} /></div>
           <div className="applications-filter-field"><label htmlFor="applications-application-type">投递类型</label><Select id="applications-application-type" aria-label="投递类型" allowClear mode="multiple" placeholder="投递类型" options={Object.entries(applicationTypeLabels).map(([value, label]) => ({ value, label }))} value={params.application_type} onChange={(value: ApplicationType[]) => updateFilters({ application_type: value.length ? value : undefined })} /></div>
-          <div className="applications-filter-field"><label htmlFor="applications-industry">行业</label><Select id="applications-industry" aria-label="行业" allowClear mode="tags" placeholder="行业" value={params.industry} onChange={(value: string[]) => updateFilters({ industry: value.length ? value : undefined })} /></div>
+          <div className="applications-filter-field"><label htmlFor="applications-industry">行业</label><Select id="applications-industry" aria-label="行业" allowClear mode="tags" placeholder="行业" options={industryOptions} value={params.industry} onChange={(value: string[]) => updateFilters({ industry: value.length ? value : undefined })} /></div>
           <div className="applications-filter-field"><label htmlFor="applications-company-size">企业规模</label><Select id="applications-company-size" aria-label="企业规模" allowClear mode="multiple" placeholder="企业规模" options={sizeOptions.map((value) => ({ value, label: value }))} value={params.company_size} onChange={(value: string[]) => updateFilters({ company_size: value.length ? value : undefined })} /></div>
           <div className="applications-filter-field"><label htmlFor="applications-date-range-start">投递日期</label><DatePicker.RangePicker id={{ start: "applications-date-range-start", end: "applications-date-range-end" }} aria-label="投递日期" value={params.date_from && params.date_to ? [dayjs(params.date_from), dayjs(params.date_to)] : undefined} onChange={(value) => updateFilters({ date_from: value?.[0]?.format("YYYY-MM-DD"), date_to: value?.[1]?.format("YYYY-MM-DD") })} /></div>
           <div className="applications-filter-field applications-filter-field--quick-actions"><span>快捷日期</span><Space wrap><Button onClick={() => updateFilters({ date_from: dayjs().subtract(6, "day").format("YYYY-MM-DD"), date_to: dayjs().format("YYYY-MM-DD") })}>近7天</Button><Button onClick={() => updateFilters({ date_from: dayjs().subtract(29, "day").format("YYYY-MM-DD"), date_to: dayjs().format("YYYY-MM-DD") })}>近30天</Button></Space></div>
