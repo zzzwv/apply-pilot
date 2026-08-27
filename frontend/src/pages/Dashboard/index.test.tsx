@@ -92,6 +92,20 @@ describe("Guest dashboard filters", () => {
     await waitFor(() => expect(totalMetric()).toBe("2"));
   });
 
+  it("offers existing industries in the dashboard industry filter", async () => {
+    const source = new LocalApplicationDataSource();
+    await source.create({ company: { full_name: "AI", short_name: null, industry: "人工智能", nature: "PRIVATE", size: "200-500" }, job_title: "A", application_type: "autumn_fulltime", application_date: "2026-08-20", channel: "official", resume_version: null, salary: null, city: null, education_requirement: null, deadline: null, requirements: null, note: null, current_status: "APPLIED" });
+    useAuthStore.setState({ user: undefined, initialized: true });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(<QueryClientProvider client={queryClient}><MemoryRouter><DashboardPage /></MemoryRouter></QueryClientProvider>);
+
+    await waitFor(() => expect(totalMetric()).toBe("1"));
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "行业" }));
+
+    expect(await screen.findByRole("option", { name: "人工智能" })).toBeDefined();
+  });
+
   it("clears an active keyword and restores the unfiltered summary", async () => {
     const source = new LocalApplicationDataSource();
     await source.create({ company: { full_name: "AI", short_name: null, industry: "AI", nature: "PRIVATE", size: "200-500" }, job_title: "A", application_type: "autumn_fulltime", application_date: "2026-08-20", channel: "official", resume_version: null, salary: null, city: null, education_requirement: null, deadline: null, requirements: null, note: null, current_status: "OFFER_RECEIVED" });

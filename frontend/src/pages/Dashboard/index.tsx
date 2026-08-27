@@ -77,6 +77,12 @@ export function DashboardPage() {
     nature: companyNatureOption(natures.data ?? []),
     trend: trendOption(trend.data ?? []),
   }), [statuses.data, industries.data, natures.data, trend.data]);
+  const industryOptions = useMemo(
+    () => (industries.data ?? [])
+      .filter((item) => item.industry !== "UNKNOWN")
+      .map((item) => ({ value: item.industry, label: item.industry })),
+    [industries.data],
+  );
   const data = summary.data;
 
   return <section className="dashboard-page">
@@ -104,7 +110,7 @@ export function DashboardPage() {
         <div className="dashboard-filter-field"><label htmlFor="dashboard-status">投递状态</label><Select id="dashboard-status" aria-label="投递状态" allowClear mode="multiple" placeholder="投递状态" options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))} value={filters.status} onChange={(value: ApplicationStatus[]) => updateFilters({ status: value.length ? value : undefined })} /></div>
         <div className="dashboard-filter-field"><label htmlFor="dashboard-company-nature">企业性质</label><Select id="dashboard-company-nature" aria-label="企业性质" allowClear mode="multiple" placeholder="企业性质" options={natureOptions.map(([value, label]) => ({ value, label }))} value={filters.company_nature} onChange={(value: string[]) => updateFilters({ company_nature: value.length ? value : undefined })} /></div>
         <div className="dashboard-filter-field"><label htmlFor="dashboard-application-type">投递类型</label><Select id="dashboard-application-type" aria-label="投递类型" allowClear mode="multiple" placeholder="投递类型" options={Object.entries(applicationTypeLabels).map(([value, label]) => ({ value, label }))} value={filters.application_type} onChange={(value: ApplicationType[]) => updateFilters({ application_type: value.length ? value : undefined })} /></div>
-        <div className="dashboard-filter-field"><label htmlFor="dashboard-industry">行业</label><Select id="dashboard-industry" aria-label="行业" allowClear mode="tags" placeholder="行业" value={filters.industry} onChange={(value: string[]) => updateFilters({ industry: value.length ? value : undefined })} /></div>
+        <div className="dashboard-filter-field"><label htmlFor="dashboard-industry">行业</label><Select id="dashboard-industry" aria-label="行业" allowClear mode="tags" placeholder="行业" options={industryOptions} value={filters.industry} onChange={(value: string[]) => updateFilters({ industry: value.length ? value : undefined })} /></div>
         <div className="dashboard-filter-field"><label htmlFor="dashboard-company-size">企业规模</label><Select id="dashboard-company-size" aria-label="企业规模" allowClear mode="multiple" placeholder="企业规模" options={sizeOptions.map((value) => ({ value, label: value }))} value={filters.company_size} onChange={(value: string[]) => updateFilters({ company_size: value.length ? value : undefined })} /></div>
         <div className="dashboard-filter-field"><label htmlFor="dashboard-date-range-start">投递日期</label><DatePicker.RangePicker id={{ start: "dashboard-date-range-start", end: "dashboard-date-range-end" }} aria-label="投递日期" value={filters.date_from && filters.date_to ? [dayjs(filters.date_from), dayjs(filters.date_to)] : undefined} onChange={(value) => updateFilters({ date_from: value?.[0]?.format("YYYY-MM-DD"), date_to: value?.[1]?.format("YYYY-MM-DD") })} /></div>
         {hasFilters && <div className="dashboard-filter-field dashboard-filter-field--action"><span>筛选操作</span><Button onClick={clearFilters}>清空筛选</Button></div>}

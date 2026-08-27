@@ -54,7 +54,7 @@ describe("cloud application detail cache side effects", () => {
   it("caches successful detail and status-history responses for the authenticated user", async () => {
     renderPage();
 
-    await screen.findByText("Engineer");
+    await screen.findByRole("heading", { name: "Engineer", level: 1 });
     await waitFor(async () => expect(await new CloudApplicationCache("user-a").getApplication("application-a")).toMatchObject({ job_title: "Engineer" }));
     await waitFor(async () => expect(await new CloudApplicationCache("user-a").getStatusLogs("application-a")).toMatchObject([{ id: "log-a", to_status: "APPLIED" }]));
   });
@@ -66,7 +66,7 @@ describe("cloud application detail cache side effects", () => {
       return updated;
     });
     renderPage();
-    await screen.findByText("Engineer");
+    await screen.findByRole("heading", { name: "Engineer", level: 1 });
 
     fireEvent.mouseDown(screen.getByRole("combobox"));
     fireEvent.click(await screen.findByText("一面"));
@@ -79,7 +79,7 @@ describe("cloud application detail cache side effects", () => {
     const error = vi.spyOn(message, "error").mockImplementation((() => undefined) as never);
     mockedChangeStatus.mockRejectedValueOnce(new AxiosError("offline", "ERR_NETWORK"));
     renderPage();
-    await screen.findByText("Engineer");
+    await screen.findByRole("heading", { name: "Engineer", level: 1 });
     await waitFor(async () => expect(await new CloudApplicationCache("user-a").getApplication("application-a")).toMatchObject({ current_status: "APPLIED" }));
 
     fireEvent.mouseDown(screen.getByRole("combobox"));

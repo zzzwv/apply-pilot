@@ -212,4 +212,32 @@ describe("ApplicationsPage guest workflow", () => {
 
     expect((await screen.findByRole("link", { name: "本地科技" })).getAttribute("href")).toBe("https://jobs.example.com/frontend");
   });
+
+  it("offers existing industries in the applications industry filter", async () => {
+    useAuthStore.setState({ user: undefined, initialized: true });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const source = new LocalApplicationDataSource();
+    await source.create({
+      company: { ...guestApplication.company, industry: "人工智能" },
+      job_title: guestApplication.job_title,
+      application_type: guestApplication.application_type,
+      application_date: guestApplication.application_date,
+      channel: guestApplication.channel,
+      resume_version: null,
+      salary: null,
+      city: null,
+      education_requirement: null,
+      deadline: null,
+      requirements: null,
+      note: null,
+      current_status: guestApplication.current_status,
+    });
+
+    render(<QueryClientProvider client={queryClient}><MemoryRouter><ApplicationsPage /></MemoryRouter></QueryClientProvider>);
+
+    await screen.findByText(guestApplication.job_title);
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "行业" }));
+
+    expect(await screen.findByRole("option", { name: "人工智能" })).toBeDefined();
+  });
 });
