@@ -372,7 +372,8 @@ def _normalize_legacy_recruitment_links(
     normalized_links: list[object] = []
     for item in payload["recruitment_links"]:
         if not isinstance(item, dict):
-            normalized_links.append(item)
+            # Raw URLs or other primitives cannot reference Stage A evidence by URL ID.
+            # They are not eligible recruitment links in the canonical contract.
             continue
 
         url_id = _resolve_legacy_recruitment_url_id(

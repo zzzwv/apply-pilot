@@ -491,6 +491,53 @@ async def test_canonical_extraction_normalizes_observed_legacy_recruitment_field
 
 
 @pytest.mark.asyncio
+async def test_canonical_extraction_discards_observed_non_object_recruitment_links() -> None:
+    """Discard redacted production-shaped raw link strings lacking Stage A URL IDs."""
+
+    from app.company_intelligence.kimi_two_stage import KimiCanonicalExtractor
+    from app.core.config import Settings
+
+    # The production diagnostic identified all three list entries as invalid. Values are
+    # synthetic: raw strings cannot establish an evidence-backed recruitment URL reference.
+    observed_payload = extraction_payload(
+        recruitment_links=[
+            "https://untrusted.example/campus",
+            "https://untrusted.example/internship",
+            "https://untrusted.example/jobs",
+        ]
+    )
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": json.dumps(observed_payload),
+                        },
+                    }
+                ]
+            },
+        )
+
+    extractor = KimiCanonicalExtractor(
+        Settings(
+            jwt_secret_key="test-only-jwt-secret-at-least-32-bytes",
+            kimi_api_key="test-kimi-api-key",
+        ),
+        transport=httpx.MockTransport(handler),
+        retry_delay_seconds=0,
+    )
+
+    result = await extractor.extract(evidence(), deadline=monotonic() + 10)
+
+    assert result.recruitment_links == []
+
+
+@pytest.mark.asyncio
 async def test_canonical_extraction_normalizes_observed_production_company_shape() -> None:
     """Map the redacted production shape, then strictly validate the canonical result."""
 
