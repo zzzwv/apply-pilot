@@ -172,19 +172,3 @@ Vite 开发服务器会将 `/api` 请求代理至 `http://localhost:8000`。
 | 云端模式 | 已登录用户的数据由 PostgreSQL 持久化，并通过用户隔离缓存改善读取体验。 |
 | 数据迁移 | 将本地 Guest 数据安全导入云端，导入过程支持幂等处理与状态日志保留。 |
 | 身份认证 | 提供注册、登录及 JWT 鉴权，保障不同用户的数据隔离。 |
-
-## 🖼️ Screenshots
-
-<!-- 建议在此放置真实项目截图：
-![Dashboard](docs/images/dashboard.png)
-![Applications](docs/images/applications.png)
-![Company Intelligence](docs/images/company-intelligence.png)
--->
-
-## 📝 License 开源协议 MIT
-
-本项目采用 [MIT License](https://opensource.org/license/mit/) 开源协议。
-
-## 🤝 Star 鼓励，欢迎 fork
-
-如果这个项目对你有帮助，欢迎点亮 Star，也欢迎 Fork 后基于自己的求职流程继续完善。Issue 和 Pull Request 同样欢迎！
