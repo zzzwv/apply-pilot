@@ -71,7 +71,6 @@ JOB_TRACKER_JWT_SECRET_KEY=replace-with-a-long-random-secret
 JOB_TRACKER_KIMI_API_KEY=
 ```
 
-> 请勿提交 `.env` 或任何真实密钥。
 
 ### 3. 依赖安装与启动
 
