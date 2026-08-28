@@ -1,78 +1,190 @@
-# 秋招 / 实习投递状态管理
+# ApplyPilot
 
-FastAPI、React/Vite、PostgreSQL、Redis、Alembic 与 JWT 的投递管理应用。Phase 6 已完成 Guest 本地工作流、登录后导入、用户隔离缓存和只读离线回退。
+> AI 驱动的求职投递管理与企业情报平台，帮助求职者集中管理投递进度、复盘求职数据，并快速补全企业公开信息。
 
-## E 盘开发环境
+## 📖 Introduction 项目简介
 
-在 PowerShell 执行 `./scripts/setup-dev.ps1`。它将 `.venv`、pip/npm 缓存、临时目录和 PostgreSQL/Redis 持久化数据保留在 `E:\qiuzhao`。Docker Desktop disk image 应配置在 `E:\qiuzhao\.docker-data`。
+ApplyPilot 是一个面向个人求职场景的全栈毕业设计项目，解决职位信息分散、投递进度难追踪、企业信息收集成本高的问题。项目将投递记录、状态时间线、数据看板、企业情报和账户数据同步整合到统一工作台。
 
-复制 `.env.example` 为 `.env`，并为 `JOB_TRACKER_JWT_SECRET_KEY` 设置随机值。`JOB_TRACKER_KIMI_API_KEY` 是可选的后端环境变量；不得把任何真实密钥提交到 Git。
+系统支持两种使用模式：
 
-```powershell
-docker compose up --build
+- **Guest Mode**：无需登录，数据保存在浏览器 IndexedDB，适合快速开始与本地管理。
+- **Cloud Mode**：登录后通过云端 API 管理数据，并提供按用户隔离的本地读取缓存与离线回退能力。
+
+## ✨ Features 项目特性
+
+- 投递记录管理：创建、编辑、删除、批量删除职位投递记录，维护岗位、公司、城市、渠道、截止日期与备注。
+- 状态时间线：覆盖未投递、已投递、笔试、面试、Offer、已签约等状态，记录变更时间和说明。
+- 数据看板：统计投递总量、进行中数量、面试与 Offer 等关键指标，并展示投递趋势及多维度分布图表。
+- 高效检索：支持按关键词、状态、企业性质、投递类型、行业、规模和日期筛选、排序。
+- 企业情报：在 Cloud Mode 中查询或补全企业公开信息、招聘链接及来源信息；保存前可人工确认和编辑。
+- AI 能力集成：可选接入 Kimi API，完成企业情报处理与联网检索流程。
+- 本地与云端协同：Guest 数据可在登录后批量导入云端，使用 `client_sync_id` 保证同步幂等，避免重复导入。
+- 账户与安全：支持注册、登录、JWT 鉴权、会话初始化和失效登录态清理。
+
+## 🛠️ Tech Stack 技术栈
+
+| 分类 | 技术与库 |
+| --- | --- |
+| 前端 | React 19、TypeScript、Vite、React Router、Axios |
+| 前端状态与数据 | TanStack React Query、Zustand、IndexedDB、idb |
+| UI 与可视化 | Ant Design、ECharts |
+| 后端 | Python、FastAPI、Uvicorn、Pydantic Settings、HTTPX |
+| 数据层 | PostgreSQL、SQLAlchemy Async、asyncpg、Alembic |
+| 缓存 | Redis |
+| AI 服务 | Kimi API（可选） |
+| 部署 | Docker、Docker Compose、Nginx |
+| 测试 | pytest、Vitest、Testing Library、jsdom、fake-indexeddb |
+
+## ⚙️ Environment Requirements 环境要求
+
+| 组件 | 版本要求 |
+| --- | --- |
+| Docker / Docker Compose | Docker Desktop 最新稳定版；支持 `docker compose` 命令 |
+| Python | 3.12.x（独立运行后端时） |
+| Node.js | 20 LTS 或更高版本（独立运行前端时） |
+| PostgreSQL | 16（容器化部署自动提供） |
+| Redis | 7（容器化部署自动提供） |
+| Kimi API Key | 可选；仅企业情报 AI / 联网检索功能需要 |
+
+## 🚀 Quick Start 快速部署运行
+
+### 1. 仓库克隆
+
+```bash
+git clone git@github.com:zzzwv/apply-pilot.git
+cd apply-pilot
 ```
 
-- Frontend：`http://localhost:5173`
-- Backend health：`http://localhost:8000/health`
-- 本地后端：`backend\.venv\Scripts\uvicorn app.main:app --reload`
-- 本地前端：在 `frontend` 运行 `npm run dev`
+### 2. 配置说明
 
-## 使用方式与数据边界
+从示例文件创建本地配置：
 
-### Guest Mode
+```bash
+cp .env.example .env
+```
 
-未登录用户使用现有的 Application、Detail 和 Dashboard UI。应用、企业展示字段和状态历史保存到当前浏览器的 IndexedDB `guest` namespace；支持创建、编辑、删除、状态变更、搜索、筛选、排序、分页和 Dashboard。
+至少为 `JOB_TRACKER_JWT_SECRET_KEY` 设置一个足够长的随机值。若不使用企业情报 AI 功能，可保持 `JOB_TRACKER_KIMI_API_KEY` 为空。
 
-### Authentication
+```dotenv
+JOB_TRACKER_JWT_SECRET_KEY=replace-with-a-long-random-secret
+JOB_TRACKER_KIMI_API_KEY=
+```
 
-认证范围保持最小：注册、登录、登出和当前用户状态。接口为 `POST /api/v1/auth/register`、`POST /api/v1/auth/login`、`GET /api/v1/auth/me`。登出会删除 token、当前用户状态及该用户的 TanStack Query 数据，但不会删除 Guest 数据或云端缓存。
+> 请勿提交 `.env` 或任何真实密钥。
 
-### Cloud Sync 与幂等导入
+### 3. 依赖安装与启动
 
-登录完成且当前用户已解析后，如果当前浏览器有 Guest 数据，界面会提示用户选择是否导入，绝不静默上传。导入调用 JWT 保护的 `POST /api/v1/sync/import-applications`，每批最多 200 条。
+推荐使用 Docker Compose，一次启动 PostgreSQL、Redis、FastAPI 后端和前端 Nginx 服务：
 
-每条 Guest application 使用其 `local_id` 作为 `client_sync_id`。后端以 `(user_id, client_sync_id)` 的 partial unique index 保证同一用户重试返回 `reused`，不同用户可独立使用相同 local ID。客户端只消费服务端返回的真实 mapping，在云端 refetch 成功后才删除本次 `imported` 或 `reused` 的 Guest 记录；失败记录保留以便重试。
+```bash
+docker compose up --build -d
+docker compose exec backend alembic upgrade head
+```
 
-### Cloud Cache 与离线读取
+服务启动后：
 
-登录用户以 PostgreSQL 为唯一 source of truth。IndexedDB 中的 `cloud:<user_id>` 仅是成功云端读取/写入后的用户隔离缓存，绝不会主动覆盖后端。
+- 前端：http://localhost:5173
+- 后端健康检查：http://localhost:8000/health
+- API 前缀：http://localhost:8000/api/v1
 
-当 list 或 detail 发生网络/可恢复读取失败时，界面仅可回退到当前用户 namespace 的最近缓存，并显示 stale/offline 提示和缓存时间。401、403 与 detail 404 不会回退缓存。离线 Create、Edit、Status Change、Delete 都会明确失败；V1 不实现 mutation queue 或 replay。
+停止服务：
 
-## V1 Sync Limitations
+```bash
+docker compose down
+```
 
-1. Guest 数据仅保存在当前浏览器。
-2. Guest 数据只能在登录后由用户显式导入。
-3. 登录后的正式数据以 PostgreSQL 为准。
-4. IndexedDB cloud 数据仅是 cache。
-5. 离线 cloud 模式仅支持 stale read fallback。
-6. 离线写操作不排队、不重放。
-7. 跨设备更新需要下一次 refetch。
-8. 不提供 WebSocket 实时协作。
+### 4. 本地开发模式（可选）
 
-## Company Intelligence
+先启动数据库和缓存：
 
-Company Intelligence 仅在登录后的 cloud 表单中可用；Guest 表单保留手工企业录入。Kimi API Key 只应存在于后端环境变量中，且不参与 Guest 导入、缓存或离线流程。
+```bash
+docker compose up -d postgres redis
+```
 
-## Tests
+启动后端：
 
-```powershell
-# Backend
+```bash
 cd backend
-.venv\Scripts\python.exe -m pytest
-.venv\Scripts\ruff.exe check app/schemas/application.py tests/test_sync_import.py
-
-# Frontend
-cd ..\frontend
-npm test
-npm run build
-
-# Docker / migrations
-cd ..
-docker compose ps
-docker compose exec -T backend alembic current
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+python -m alembic upgrade head
+python -m uvicorn app.main:app --reload
 ```
 
-## Performance Evidence
+另开一个终端启动前端：
 
-本机 Docker / WSL2 上用 1,200 条 applications、30 家 companies、每端点 10 次 warm measured run 得到：列表/Search 的最高 P95 为 28.0ms，Dashboard 的最高 P95 为 15.5ms；IndexedDB 1,000 条 list/filter/dashboard 健全性测试通过。完整原始口径和各端点 median/P95/max 见 [benchmark evidence](benchmarks/phase6-performance-baseline.md)。这些是本机基准，不代表生产容量。首次加载时间为 `Not independently verified`。
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Vite 开发服务器会将 `/api` 请求代理至 `http://localhost:8000`。
+
+## 📂 Project Structure 项目目录结构
+
+```text
+.
+├── backend/
+│   ├── alembic/                    # 数据库迁移脚本
+│   ├── app/
+│   │   ├── api/                    # FastAPI 路由：认证、投递、看板、同步
+│   │   ├── company_intelligence/   # Kimi、企业信息处理与链接校验
+│   │   ├── core/                   # 配置、数据库、Redis、安全、中间件
+│   │   ├── models/                 # SQLAlchemy 数据模型
+│   │   ├── repositories/           # 数据访问层
+│   │   ├── schemas/                # 请求与响应模型
+│   │   ├── services/               # 业务服务层
+│   │   └── main.py                 # 应用入口
+│   ├── tests/                      # 后端测试
+│   ├── requirements-dev.txt        # 开发依赖
+│   └── pyproject.toml
+├── frontend/
+│   ├── src/
+│   │   ├── api/                    # API 客户端
+│   │   ├── components/             # 通用 UI 组件
+│   │   ├── dashboard/              # 看板指标与图表逻辑
+│   │   ├── data/                   # Guest / Cloud 数据源与缓存
+│   │   ├── local-db/               # IndexedDB Repository
+│   │   ├── pages/                  # Dashboard、投递列表、详情等页面
+│   │   ├── store/                  # 前端状态管理
+│   │   └── sync/                   # Guest 数据导入逻辑
+│   ├── Dockerfile
+│   └── package.json
+├── scripts/
+│   └── setup-dev.ps1               # Windows 开发环境辅助脚本
+├── compose.yaml                    # 容器编排配置
+├── .env.example                    # 环境变量示例
+└── README.md                       # 原项目说明文档
+```
+
+## 📋 Function Description 功能说明
+
+| 模块 | 功能说明 |
+| --- | --- |
+| 投递管理 | 维护职位投递的完整信息，并支持新增、编辑、删除、批量操作与多条件筛选。 |
+| 进度追踪 | 通过状态时间线记录每次流程变化，便于回顾笔试、面试、Offer 等关键节点。 |
+| 求职看板 | 汇总关键数据，按状态、行业、企业性质和时间维度呈现求职进展。 |
+| 企业情报 | 检索、归一化并展示企业公开信息与招聘入口，支持人工编辑确认后保存。 |
+| 游客模式 | 未登录用户可在浏览器本地完成投递记录、状态日志和看板管理。 |
+| 云端模式 | 已登录用户的数据由 PostgreSQL 持久化，并通过用户隔离缓存改善读取体验。 |
+| 数据迁移 | 将本地 Guest 数据安全导入云端，导入过程支持幂等处理与状态日志保留。 |
+| 身份认证 | 提供注册、登录及 JWT 鉴权，保障不同用户的数据隔离。 |
+
+## 🖼️ Screenshots
+
+<!-- 建议在此放置真实项目截图：
+![Dashboard](docs/images/dashboard.png)
+![Applications](docs/images/applications.png)
+![Company Intelligence](docs/images/company-intelligence.png)
+-->
+
+## 📝 License 开源协议 MIT
+
+本项目采用 [MIT License](https://opensource.org/license/mit/) 开源协议。
+
+## 🤝 Star 鼓励，欢迎 fork
+
+如果这个项目对你有帮助，欢迎点亮 Star，也欢迎 Fork 后基于自己的求职流程继续完善。Issue 和 Pull Request 同样欢迎！
